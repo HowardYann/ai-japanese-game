@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -31,6 +31,7 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // 保护 /world 路由：没登录就打回登录页
+  // （真正的安全边界在 app/world/page.tsx 里的 getUser() 检查，这里只是提前拦截、减少无谓渲染）
   if (!user && request.nextUrl.pathname.startsWith("/world")) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
