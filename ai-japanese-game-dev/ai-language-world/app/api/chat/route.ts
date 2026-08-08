@@ -1,0 +1,65 @@
+// app/api/chat/route.ts
+//
+// 核心链路：
+// 玩家发消息 -> 拿到 event归属校验 + relationship + 最近turns
+//           -> buildChatContext 白名单组装 prompt
+//           -> callClaude 只吃文本不吃tool
+//           -> 把 user消息 和 NPC回应 都存进 conversation_turns
+//           -> 把NPC回应返回前端
+
+import { NextRequest, NextResponse } from "next/server";
+import { requireUserId } from "../../../lib/supabase/requireUserId";
+import { getNpcConfig } from "../../../lib/npc/registry";
+import { getOrCreateRelationship } from "../../../lib/db/npcRelationships";
+import { getTurnsForEvent, appendTurn, getOwnedEvent } from "../../../lib/db/events";
+import { buildChatContext } from "../../../lib/context/buildContext";
+import { callClaude } from "../../../lib/claude/client";
+
+export async function POST(req: NextRequest) {
+  let userId: string;
+  try {
+    userId = await requireUserId();
+  } catch {
+    return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
+  }
+
+  const body = await req.json().catch(() => null);
+  const eventId = body?.eventId;
+  const message = body?.message;
+
+  if (!eventId || typeof eventId !== "string") {
+    return NextResponse.json({ error: "eventId is required" }, { status: 400 });
+  }
+  if (!message || typeof message !== "string" || !message.trim()) {
+    return NextResponse.json({ error: "message is required" }, { status: 400 });
+  }
+
+  try {
+    // 归属权校验 + 拿出这场事件是跟哪个NPC聊的
+    const event = await getOwnedEvent(eventId, userId);
+    const npc = getNpcConfig(event.npc_id);
+
+    const [relationship, recentTurns] = await Promise.all([
+      getOrCreateRelationship(userId, event.npc_id),
+      getTurnsForEvent(eventId, userId),
+    ]);
+
+    const { systemPrompt, messages } = buildChatContext(
+      npc,
+      relationship,
+      recentTurns,
+      message
+    );
+
+    const npcReply = await callClaude(systemPrompt, messages);
+
+    // 先存玩家发言，再存NPC回应，保持时间顺序
+    await appendTurn(eventId, userId, "user", message);
+    await appendTurn(eventId, userId, "npc", npcReply);
+
+    return NextResponse.json({ reply: npcReply });
+  } catch (err) {
+    console.error("Chat turn failed", err);
+    return NextResponse.json({ error: "Chat turn failed" }, { status: 500 });
+  }
+}

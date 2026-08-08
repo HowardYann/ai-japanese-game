@@ -1,0 +1,137 @@
+// lib/claude/client.ts
+//
+// 安全纪律 #2：AI不做tool calling去查库/查文件。
+// 这个模块只做一件事：拿组装好的 system prompt + messages，调对应厂商的API，
+// 把纯文本回应吐回去。没有 tools 参数，没有数据库连接。
+//
+// 支持多供应商切换（方便用免费额度测试），通过 AI_PROVIDER 环境变量控制：
+//   - "anthropic"（默认）：走 Claude API，需要 ANTHROPIC_API_KEY
+//   - "openai_compatible"：走任何OpenAI兼容的 /chat/completions 接口，
+//     可以指向 Groq、OpenRouter，或本地 Ollama 等——这些大多有免费额度或完全免费。
+//     需要 AI_BASE_URL、AI_API_KEY、AI_MODEL
+//
+// 上层调用方（app/api/chat/route.ts）不需要关心具体是哪家，接口不变。
+
+import type { ClaudeMessage } from "../context/buildContext";
+
+type Provider = "anthropic" | "openai_compatible";
+
+function getProvider(): Provider {
+  const p = process.env.AI_PROVIDER;
+  return p === "openai_compatible" ? "openai_compatible" : "anthropic";
+}
+
+// ---------- Anthropic (Claude) ----------
+
+const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
+// 优先读 CLAUDE_MODEL，没设置就默认 Sonnet。
+// 测试阶段可设 CLAUDE_MODEL=claude-haiku-4-5-20251001 省钱。
+const ANTHROPIC_MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-5";
+
+async function callAnthropic(
+  systemPrompt: string,
+  messages: ClaudeMessage[]
+): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing ANTHROPIC_API_KEY env var");
+  }
+
+  const response = await fetch(ANTHROPIC_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: ANTHROPIC_MODEL,
+      max_tokens: 600,
+      system: systemPrompt,
+      messages,
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Anthropic API error ${response.status}: ${errText}`);
+  }
+
+  const data = await response.json();
+
+  // content 是一个 block 数组，MVP阶段只取纯文本块并拼接
+  const text = (data.content ?? [])
+    .filter((block: { type: string }) => block.type === "text")
+    .map((block: { text: string }) => block.text)
+    .join("\n")
+    .trim();
+
+  if (!text) {
+    throw new Error("Anthropic returned no text content");
+  }
+
+  return text;
+}
+
+// ---------- OpenAI兼容接口（Groq / OpenRouter / Ollama 等） ----------
+//
+// 这些厂商的 chat/completions 接口格式基本一致，跟Claude的差异主要是：
+// system prompt 是 messages 数组里的第一条，而不是单独的字段。
+//
+// 常见免费端点参考（额度/条款以各家最新文档为准）：
+//   Groq:       https://api.groq.com/openai/v1/chat/completions
+//   OpenRouter: https://openrouter.ai/api/v1/chat/completions
+
+async function callOpenAiCompatible(
+  systemPrompt: string,
+  messages: ClaudeMessage[]
+): Promise<string> {
+  const baseUrl = process.env.AI_BASE_URL;
+  const apiKey = process.env.AI_API_KEY;
+  const model = process.env.AI_MODEL;
+
+  if (!baseUrl || !apiKey || !model) {
+    throw new Error(
+      "openai_compatible provider需要设置 AI_BASE_URL、AI_API_KEY、AI_MODEL"
+    );
+  }
+
+  const response = await fetch(baseUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 600,
+      messages: [{ role: "system", content: systemPrompt }, ...messages],
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`OpenAI兼容接口 error ${response.status}: ${errText}`);
+  }
+
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content?.trim();
+
+  if (!text) {
+    throw new Error("OpenAI兼容接口返回了空内容");
+  }
+
+  return text;
+}
+
+// ---------- 对外统一入口 ----------
+
+export async function callClaude(
+  systemPrompt: string,
+  messages: ClaudeMessage[]
+): Promise<string> {
+  const provider = getProvider();
+  return provider === "openai_compatible"
+    ? callOpenAiCompatible(systemPrompt, messages)
+    : callAnthropic(systemPrompt, messages);
+}
