@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import LogoutButton from "./logout-button";
 import { listRelationshipsForUser } from "@/lib/db/npcRelationships";
 import { listEventsForUser } from "@/lib/db/events";
@@ -27,7 +28,15 @@ export default async function WorldPage() {
     <main className="mx-auto max-w-2xl p-8">
       <div className="mb-8 flex items-center justify-between">
         <h1 className="text-xl font-semibold">🌏 我的世界档案</h1>
-        <LogoutButton />
+        <div className="flex items-center gap-2">
+          <Link
+            href="/chat"
+            className="rounded-md border border-neutral-800 px-3 py-1.5 text-xs text-neutral-400 hover:text-neutral-100"
+          >
+            去聊天
+          </Link>
+          <LogoutButton />
+        </div>
       </div>
 
       <p className="mb-6 text-sm text-neutral-400">已登录：{user.email}</p>
