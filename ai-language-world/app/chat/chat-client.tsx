@@ -124,7 +124,7 @@ export default function ChatClient() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col p-8">
+    <main className="mx-auto flex h-screen max-w-2xl flex-col overflow-hidden p-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-xl font-semibold">💬 聊天</h1>
         <Link
@@ -142,7 +142,7 @@ export default function ChatClient() {
       )}
 
       {screen.name === "select" && (
-        <div className="space-y-3">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
           <p className="text-sm text-neutral-400">找谁聊聊？</p>
           {listNpcIds().map((npcId) => (
             <button
@@ -159,7 +159,7 @@ export default function ChatClient() {
       )}
 
       {screen.name === "chatting" && (
-        <div className="flex flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col">
           <div className="mb-3 flex items-center justify-between">
             <p className="text-sm text-neutral-400">
               正在和 {getNpcDisplayName(screen.npcId)} 聊天
@@ -173,7 +173,7 @@ export default function ChatClient() {
             </button>
           </div>
 
-          <div className="mb-4 flex-1 space-y-3 overflow-y-auto rounded-md border border-neutral-800 p-4">
+          <div className="mb-4 min-h-0 flex-1 space-y-3 overflow-y-auto rounded-md border border-neutral-800 p-4">
             {messages.length === 0 ? (
               <p className="text-sm text-neutral-500">
                 还没有消息，先打个招呼吧。
@@ -226,7 +226,7 @@ export default function ChatClient() {
       )}
 
       {screen.name === "closed" && (
-        <div className="space-y-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
           <div className="rounded-md border border-neutral-800 bg-neutral-900/60 p-4">
             <p className="mb-1 text-xs text-neutral-500">
               和 {getNpcDisplayName(screen.npcId)} 的这次对话
