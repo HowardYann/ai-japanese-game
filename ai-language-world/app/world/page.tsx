@@ -82,21 +82,38 @@ export default async function WorldPage() {
             <p className="text-sm text-neutral-500">还没有发生过任何事件。</p>
           ) : (
             <ul className="space-y-3">
-              {events.map((e) => (
-                <li key={e.id} className="text-sm">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="font-medium text-neutral-200">
-                      {getNpcDisplayName(e.npc_id)}
-                    </span>
-                    <span className="whitespace-nowrap text-xs text-neutral-500">
-                      {new Date(e.created_at).toLocaleString("zh-CN")}
-                    </span>
-                  </div>
-                  <p className="text-neutral-400">
-                    {e.summary || "（这场对话还没结束/还没生成摘要）"}
-                  </p>
-                </li>
-              ))}
+              {events.map((e) => {
+                const isUnfinished = !e.summary;
+                const content = (
+                  <>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="font-medium text-neutral-200">
+                        {getNpcDisplayName(e.npc_id)}
+                      </span>
+                      <span className="whitespace-nowrap text-xs text-neutral-500">
+                        {new Date(e.created_at).toLocaleString("zh-CN")}
+                      </span>
+                    </div>
+                    <p className={isUnfinished ? "text-amber-500/80" : "text-neutral-400"}>
+                      {isUnfinished ? "（对话未结束，点击继续）" : e.summary}
+                    </p>
+                  </>
+                );
+                return (
+                  <li key={e.id} className="text-sm">
+                    {isUnfinished ? (
+                      <Link
+                        href={`/chat?eventId=${e.id}`}
+                        className="block rounded-md -m-2 p-2 hover:bg-neutral-900/60"
+                      >
+                        {content}
+                      </Link>
+                    ) : (
+                      content
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

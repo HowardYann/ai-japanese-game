@@ -9,6 +9,7 @@ type Message = { role: "user" | "npc"; content: string };
 
 type Screen =
   | { name: "select" }
+  | { name: "loading" }
   | { name: "chatting"; npcId: string; eventId: string }
   | {
       name: "closed";
@@ -22,9 +23,15 @@ function isUnauthenticated(res: Response) {
   return res.status === 401;
 }
 
-export default function ChatClient() {
+export default function ChatClient({
+  initialEventId,
+}: {
+  initialEventId?: string | null;
+}) {
   const router = useRouter();
-  const [screen, setScreen] = useState<Screen>({ name: "select" });
+  const [screen, setScreen] = useState<Screen>(
+    initialEventId ? { name: "loading" } : { name: "select" }
+  );
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -36,6 +43,61 @@ export default function ChatClient() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
+
+  // 带着eventId进来（从/world点了"未结束的对话"）：拉取历史turns恢复现场
+  useEffect(() => {
+    if (!initialEventId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/event/${initialEventId}`);
+        if (isUnauthenticated(res)) {
+          router.push("/");
+          return;
+        }
+        if (!res.ok) {
+          if (cancelled) return;
+          setErrorMsg("这场对话找不到了，可能已经不存在。");
+          setScreen({ name: "select" });
+          return;
+        }
+        const data = await res.json();
+        if (cancelled) return;
+
+        if (data.closed) {
+          // 理论上/world只会把未关档的事件做成链接，这里是防御性兜底
+          setScreen({
+            name: "closed",
+            npcId: data.npcId,
+            eventSummary: data.eventSummary,
+            lifeCollectionTitle: data.lifeCollectionTitle ?? null,
+          });
+          return;
+        }
+
+        setMessages(
+          data.turns.map((t: { role: "user" | "npc"; content: string }) => ({
+            role: t.role,
+            content: t.content,
+          }))
+        );
+        setScreen({
+          name: "chatting",
+          npcId: data.npcId,
+          eventId: data.eventId,
+        });
+      } catch {
+        if (cancelled) return;
+        setErrorMsg("网络出了点问题，没能恢复这场对话。");
+        setScreen({ name: "select" });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialEventId, router]);
 
   async function handleSelectNpc(npcId: string) {
     setErrorMsg("");
@@ -145,6 +207,12 @@ export default function ChatClient() {
         <p className="mb-4 rounded-md border border-red-900/50 bg-red-950/30 p-3 text-sm text-red-300">
           {errorMsg}
         </p>
+      )}
+
+      {screen.name === "loading" && (
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <p className="text-sm text-neutral-500">正在恢复对话…</p>
+        </div>
       )}
 
       {screen.name === "select" && (
