@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { listNpcIds, getNpcDisplayName } from "@/lib/npc/registry";
@@ -30,6 +30,12 @@ export default function ChatClient() {
   const [sending, setSending] = useState(false);
   const [closing, setClosing] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 消息列表变化（新消息 / 发送中占位出现）时自动滚到底部
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, sending]);
 
   async function handleSelectNpc(npcId: string) {
     setErrorMsg("");
@@ -197,6 +203,7 @@ export default function ChatClient() {
                 …
               </div>
             )}
+            <div ref={messagesEndRef} />
           </div>
 
           <form

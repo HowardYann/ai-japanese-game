@@ -13,6 +13,7 @@
 //   -> 返回给前端展示"这次经历被记录下来了"
 
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { requireUserId } from "../../../../lib/supabase/requireUserId";
 import { getNpcConfig } from "../../../../lib/npc/registry";
 import {
@@ -79,6 +80,9 @@ export async function POST(req: NextRequest) {
         text: "这次对话已经结束，但记录整理时出了点小问题，暂时没有生成详细摘要。",
         lifeCollectionTitle: null,
       });
+      // 世界档案页是Server Component，不加这个的话玩家从聊天页返回/world
+      // 大概率会看到Next.js缓存的旧数据（关档前的状态）
+      revalidatePath("/world");
       return NextResponse.json({
         eventId: fallbackEvent.id,
         eventSummary: fallbackEvent.summary,
@@ -99,6 +103,8 @@ export async function POST(req: NextRequest) {
         lifeCollectionTitle: result.lifeCollectionTitle,
       }),
     ]);
+
+    revalidatePath("/world");
 
     return NextResponse.json({
       eventId: updatedEvent.id,
