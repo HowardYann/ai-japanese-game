@@ -19,6 +19,23 @@ export interface SummaryContext {
   userMessage: string;
 }
 
+/** 单条语言观察——原始行为记录，不是打分。assistLevel/operation这些标签
+ *  是为将来的水平聚合分析准备的最小必要metadata，现在只负责如实记录。 */
+export interface LanguageObservation {
+  item: string; // 具体语言元素，自由字符串，如"〜てもいいですか"
+  category: "vocabulary" | "expression" | "grammar";
+  assistLevel: "unassisted" | "scaffolded" | "corrected";
+  operation:
+    | "comprehension"
+    | "inference"
+    | "formulation"
+    | "interaction"
+    | "repair"
+    | "adaptation"
+    | null;
+  outcome: "success" | "partial" | "repair_needed";
+}
+
 /** AI应该返回的JSON结构（后端解析后使用） */
 export interface SummaryResult {
   eventSummary: string;
@@ -26,6 +43,7 @@ export interface SummaryResult {
   relationshipStage: "初识" | "熟悉中" | "熟悉" | "亲近";
   knownFacts: Record<string, string>;
   lifeCollectionTitle: string | null;
+  languageObservations: LanguageObservation[];
 }
 
 const VALID_STAGES = ["初识", "熟悉中", "熟悉", "亲近"] as const;
@@ -76,13 +94,23 @@ JSON结构必须是：
   "relationshipSummary": "整体重写关系摘要，合并旧摘要和这次新发生的内容，2-4句话，不是追加而是覆盖式重写",
   "relationshipStage": "初识 | 熟悉中 | 熟悉 | 亲近 中的一个（根据对话质量和次数判断是否该推进，不确定就保持不变）",
   "knownFacts": { "键": "值", "...": "..." }，把旧的known_facts和这次新透露的事合并成的最新版本（键用简短的中文短语，比如"日语自学方法"，值是具体内容；没有新增就原样返回旧的）,
-  "lifeCollectionTitle": "如果这次对话有一个值得被记住的高光时刻（比如约定了下次做什么、一次真诚的情感交流、一个有意思的转折），给它起一个简短有生活感的标题（8-16字），像日记标题那样；如果只是普通闲聊没有特别值得记住的瞬间，返回 null"
+  "lifeCollectionTitle": "如果这次对话有一个值得被记住的高光时刻（比如约定了下次做什么、一次真诚的情感交流、一个有意思的转折），给它起一个简短有生活感的标题（8-16字），像日记标题那样；如果只是普通闲聊没有特别值得记住的瞬间，返回 null",
+  "languageObservations": [
+    {
+      "item": "具体的词汇/表达/语法，比如「〜てもいいですか」",
+      "category": "vocabulary | expression | grammar 中的一个",
+      "assistLevel": "unassisted（玩家自己独立说出/写出，没有任何提示辅助） | scaffolded（玩家是拼接/复用了对话中出现过的词块或例句） | corrected（玩家说错了，是NPC纠正后玩家才用对的）中的一个",
+      "operation": "这次使用主要体现了玩家哪种沟通能力，从 comprehension（理解输入）| inference（靠已知推断未知）| formulation（用已有资源表达意图）| interaction（根据对方反馈调整）| repair（沟通卡住后主动修复，比如请求重复/换种说法/确认理解）| adaptation（根据场合调整表达方式）中选一个最贴切的，如果这条只是单纯记录\"用了某个词\"看不出体现了哪种能力，返回 null",
+      "outcome": "success | partial | repair_needed 中的一个"
+    }
+  ]
 }
 
 判断标准：
 - lifeCollectionTitle 不需要每次都有，普通寒暄对话应该返回 null，不要为了有而硬造
 - relationshipStage 的推进要谨慎，一两次对话不足以从"初识"跳到"熟悉"
-- 如果对话内容很短（比如玩家只发了一两条消息就结束），仍然要正常输出JSON，eventSummary可以如实反映"简短的互动"`;
+- 如果对话内容很短（比如玩家只发了一两条消息就结束），仍然要正常输出JSON，eventSummary可以如实反映"简短的互动"
+- languageObservations 只记录这场对话里真实观察到的、值得注意的语言使用瞬间（不需要覆盖每一句话），没有明显值得记录的就返回空数组 []；重点标注清楚assistLevel——尤其要分清楚"玩家自己独立说出来的"和"玩家只是复用/拼接了对话里已经出现过的表达"这两种情况，这个区分对后续的水平判断非常关键，不要为了图省事把scaffolded的用法标成unassisted`;
 
   const userMessage = `这是完整对话记录：\n\n${turnsToTranscript(turns)}\n\n请输出JSON。`;
 
@@ -133,11 +161,43 @@ export function parseSummaryResult(raw: string): SummaryResult {
       ? p.lifeCollectionTitle.trim()
       : null;
 
+  // languageObservations是增量的学习信号，不是关档能不能成功的必要条件——
+  // 单条格式不对就丢弃那一条，不因为这个字段的瑕疵让整个总结失败
+  const VALID_CATEGORIES = ["vocabulary", "expression", "grammar"];
+  const VALID_ASSIST_LEVELS = ["unassisted", "scaffolded", "corrected"];
+  const VALID_OPERATIONS = [
+    "comprehension",
+    "inference",
+    "formulation",
+    "interaction",
+    "repair",
+    "adaptation",
+  ];
+  const VALID_OUTCOMES = ["success", "partial", "repair_needed"];
+
+  const languageObservations: LanguageObservation[] = Array.isArray(
+    p.languageObservations
+  )
+    ? p.languageObservations.filter((o): o is LanguageObservation => {
+        if (typeof o !== "object" || o === null) return false;
+        const obs = o as Record<string, unknown>;
+        return (
+          typeof obs.item === "string" &&
+          obs.item.trim().length > 0 &&
+          VALID_CATEGORIES.includes(obs.category as string) &&
+          VALID_ASSIST_LEVELS.includes(obs.assistLevel as string) &&
+          (obs.operation === null || VALID_OPERATIONS.includes(obs.operation as string)) &&
+          VALID_OUTCOMES.includes(obs.outcome as string)
+        );
+      })
+    : [];
+
   return {
     eventSummary: p.eventSummary.trim(),
     relationshipSummary: p.relationshipSummary.trim(),
     relationshipStage: p.relationshipStage,
     knownFacts: p.knownFacts as Record<string, string>,
     lifeCollectionTitle,
+    languageObservations,
   };
 }

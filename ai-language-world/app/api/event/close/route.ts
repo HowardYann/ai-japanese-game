@@ -110,6 +110,7 @@ export async function POST(req: NextRequest) {
       closeEvent(eventId, userId, {
         text: result.eventSummary,
         lifeCollectionTitle: result.lifeCollectionTitle,
+        languageObservations: result.languageObservations,
       }),
     ]);
 

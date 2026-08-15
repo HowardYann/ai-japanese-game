@@ -110,6 +110,7 @@ export async function closeEvent(
   summary: {
     text: string;
     lifeCollectionTitle?: string | null;
+    languageObservations?: unknown[];
   }
 ): Promise<EventRow> {
   await getOwnedEvent(eventId, userId);
@@ -120,6 +121,7 @@ export async function closeEvent(
     .update({
       summary: summary.text,
       life_collection_title: summary.lifeCollectionTitle ?? null,
+      language_observations: summary.languageObservations ?? [],
     })
     .eq("id", eventId)
     .eq("user_id", userId)

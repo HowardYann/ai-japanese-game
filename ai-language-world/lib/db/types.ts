@@ -15,6 +15,7 @@ export interface EventRow {
   npc_id: string;
   summary: string | null;
   life_collection_title: string | null;
+  language_observations: unknown[];
   created_at: string;
 }
 
