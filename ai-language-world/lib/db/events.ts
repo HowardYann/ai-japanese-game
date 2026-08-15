@@ -82,6 +82,28 @@ export async function appendTurn(
   return data as ConversationTurnRow;
 }
 
+/**
+ * 关档时清空这场事件的原始逐字对话。
+ * 设计取舍：summary/relationship已经把这次经历浓缩记录下来了，
+ * 原始文本从关档那一刻起就是纯冗余——不长期留存，
+ * 一是控制存储量随用户量增长的速度，二是尊重玩家隐私（不留永久聊天记录）。
+ * 只在事件还"进行中"（未关档）时才需要turns：当context给AI用、或支持续聊。
+ */
+export async function deleteTurnsForEvent(
+  eventId: string,
+  userId: string
+): Promise<void> {
+  await getOwnedEvent(eventId, userId);
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("conversation_turns")
+    .delete()
+    .eq("event_id", eventId);
+
+  if (error) throw error;
+}
+
 export async function closeEvent(
   eventId: string,
   userId: string,

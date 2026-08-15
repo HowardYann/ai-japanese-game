@@ -20,7 +20,12 @@ import {
   getOrCreateRelationship,
   updateRelationshipSummary,
 } from "../../../../lib/db/npcRelationships";
-import { getOwnedEvent, getTurnsForEvent, closeEvent } from "../../../../lib/db/events";
+import {
+  getOwnedEvent,
+  getTurnsForEvent,
+  closeEvent,
+  deleteTurnsForEvent,
+} from "../../../../lib/db/events";
 import {
   buildSummaryContext,
   parseSummaryResult,
@@ -83,6 +88,10 @@ export async function POST(req: NextRequest) {
       // 世界档案页是Server Component，不加这个的话玩家从聊天页返回/world
       // 大概率会看到Next.js缓存的旧数据（关档前的状态）
       revalidatePath("/world");
+      // 即使走的是兜底摘要，这场对话也已经"关档"了——原始逐字稿不再需要保留
+      await deleteTurnsForEvent(eventId, userId).catch((e) =>
+        console.error("Failed to delete turns after degraded close", e)
+      );
       return NextResponse.json({
         eventId: fallbackEvent.id,
         eventSummary: fallbackEvent.summary,
@@ -105,6 +114,10 @@ export async function POST(req: NextRequest) {
     ]);
 
     revalidatePath("/world");
+    // 关档成功，summary/relationship已经记录了这次经历——原始turns不再需要保留
+    await deleteTurnsForEvent(eventId, userId).catch((e) =>
+      console.error("Failed to delete turns after close", e)
+    );
 
     return NextResponse.json({
       eventId: updatedEvent.id,
