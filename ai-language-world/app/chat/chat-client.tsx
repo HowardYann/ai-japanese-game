@@ -44,6 +44,11 @@ export default function ChatClient({
   const [errorMsg, setErrorMsg] = useState("");
   // 记录刚被点击复制的词块（用消息索引+词块索引拼key），短暂显示"已复制"再恢复
   const [copiedChunkKey, setCopiedChunkKey] = useState<string | null>(null);
+  // 假名标注toggle：开着的时候才去请求/api/furigana，关着完全不发请求
+  const [showFurigana, setShowFurigana] = useState(false);
+  // 按NPC消息原文缓存转换结果，同样的文本只转一次；toggle关了缓存也保留，
+  // 下次开回来不用重新请求
+  const [furiganaCache, setFuriganaCache] = useState<Record<string, string>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   async function handleCopyChunk(key: string, chunk: string) {
@@ -62,6 +67,53 @@ export default function ChatClient({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
+
+  // toggle开着时，把还没转换过的NPC消息原文批量发去/api/furigana换取ruby HTML
+  useEffect(() => {
+    if (!showFurigana) return;
+
+    const npcTexts = Array.from(
+      new Set(messages.filter((m) => m.role === "npc").map((m) => m.content))
+    );
+    const missing = npcTexts.filter((text) => !(text in furiganaCache));
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      const results = await Promise.all(
+        missing.map(async (text) => {
+          try {
+            const res = await fetch("/api/furigana", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text }),
+            });
+            if (isUnauthenticated(res)) {
+              router.push("/");
+              return [text, null] as const;
+            }
+            if (!res.ok) return [text, null] as const;
+            const data = await res.json();
+            return [text, typeof data.html === "string" ? data.html : null] as const;
+          } catch {
+            return [text, null] as const;
+          }
+        })
+      );
+      if (cancelled) return;
+      setFuriganaCache((prev) => {
+        const next = { ...prev };
+        for (const [text, html] of results) {
+          if (html) next[text] = html;
+        }
+        return next;
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showFurigana, messages, furiganaCache, router]);
 
   // 带着eventId进来（从/world点了"未结束的对话"）：拉取历史turns恢复现场
   useEffect(() => {
@@ -264,13 +316,25 @@ export default function ChatClient({
             <p className="text-sm text-neutral-400">
               正在和 {getNpcDisplayName(screen.npcId)} 聊天
             </p>
-            <button
-              onClick={handleClose}
-              disabled={closing}
-              className="rounded-md border border-neutral-800 px-3 py-1.5 text-xs text-neutral-400 hover:text-neutral-100 disabled:opacity-50"
-            >
-              {closing ? "结束中…" : "结束对话"}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowFurigana((v) => !v)}
+                className={
+                  showFurigana
+                    ? "rounded-md border border-neutral-500 bg-neutral-800 px-3 py-1.5 text-xs text-neutral-100"
+                    : "rounded-md border border-neutral-800 px-3 py-1.5 text-xs text-neutral-400 hover:text-neutral-100"
+                }
+              >
+                かな {showFurigana ? "开" : "关"}
+              </button>
+              <button
+                onClick={handleClose}
+                disabled={closing}
+                className="rounded-md border border-neutral-800 px-3 py-1.5 text-xs text-neutral-400 hover:text-neutral-100 disabled:opacity-50"
+              >
+                {closing ? "结束中…" : "结束对话"}
+              </button>
+            </div>
           </div>
 
           <div className="mb-4 min-h-0 flex-1 space-y-3 overflow-y-auto rounded-md border border-neutral-800 p-4">
@@ -288,7 +352,17 @@ export default function ChatClient({
                         : "mr-auto max-w-[80%] rounded-md bg-neutral-800 px-3 py-2 text-sm text-neutral-100"
                     }
                   >
-                    {m.content}
+                    {m.role === "npc" && showFurigana && furiganaCache[m.content] ? (
+                      // 转换结果是可信来源（我们自己的/api/furigana接口生成，
+                      // 且toRubyHtml对文本做了HTML转义），dangerouslySetInnerHTML
+                      // 只用来渲染<ruby>/<rt>标签，不是回显任意用户输入
+                      <span
+                        className="furigana-text"
+                        dangerouslySetInnerHTML={{ __html: furiganaCache[m.content] }}
+                      />
+                    ) : (
+                      m.content
+                    )}
                   </div>
 
                   {/* 组句辅助命中时才出现：接在NPC消息后面的独立提示区块，词块可点击复制 */}

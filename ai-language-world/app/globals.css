@@ -1,3 +1,13 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* 假名标注（ruby注音）样式——ruby/rt浏览器默认样式在深色背景下不好看，这里对齐一下 */
+.furigana-text ruby {
+  ruby-align: center;
+}
+.furigana-text rt {
+  font-size: 0.6em;
+  color: rgb(163 163 163); /* neutral-400，比正文台词浅一些，不抢视觉重心 */
+  user-select: none;
+}
