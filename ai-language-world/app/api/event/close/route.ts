@@ -71,24 +71,21 @@ export async function POST(req: NextRequest) {
     ]);
 
     const { systemPrompt, userMessage } = buildSummaryContext(npc, relationship, turns);
-    const raw = await callClaude(systemPrompt, [{ role: "user", content: userMessage }]);
 
     let result: SummaryResult;
     try {
+      const raw = await callClaude(systemPrompt, [{ role: "user", content: userMessage }]);
       result = parseSummaryResult(raw);
-    } catch (parseErr) {
-      // AI没按格式吐JSON——MVP阶段的兜底：不生成人生收藏，
-      // 但仍然关档，用一句朴素的占位摘要，避免这场事件永远悬空、
-      // 玩家却看不到任何反馈。同时把原始返回记到日志方便后续调参prompt。
-      console.error("Summary解析失败，使用兜底摘要", parseErr, raw);
+    } catch (summaryErr) {
+      // 兜底范围覆盖"AI这一步失败的任何原因"——网络问题、供应商返回空内容、
+      // 限流、超时，或者格式对不上解析失败。不管是哪种，"结束对话"这个动作
+      // 对玩家来说必须始终能成功，最坏情况给一个占位摘要，而不是让事件卡死打不开。
+      console.error("生成摘要失败，使用兜底摘要", summaryErr);
       const fallbackEvent = await closeEvent(eventId, userId, {
         text: "这次对话已经结束，但记录整理时出了点小问题，暂时没有生成详细摘要。",
         lifeCollectionTitle: null,
       });
-      // 世界档案页是Server Component，不加这个的话玩家从聊天页返回/world
-      // 大概率会看到Next.js缓存的旧数据（关档前的状态）
       revalidatePath("/world");
-      // 即使走的是兜底摘要，这场对话也已经"关档"了——原始逐字稿不再需要保留
       await deleteTurnsForEvent(eventId, userId).catch((e) =>
         console.error("Failed to delete turns after degraded close", e)
       );
