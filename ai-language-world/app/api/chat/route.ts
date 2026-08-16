@@ -14,6 +14,7 @@ import { getOrCreateRelationship } from "../../../lib/db/npcRelationships";
 import { getTurnsForEvent, appendTurn, getOwnedEvent } from "../../../lib/db/events";
 import { buildChatContext } from "../../../lib/context/buildContext";
 import { callClaude } from "../../../lib/claude/client";
+import { extractWordChunks } from "../../../lib/chat/extractWordChunks";
 
 export async function POST(req: NextRequest) {
   let userId: string;
@@ -51,13 +52,16 @@ export async function POST(req: NextRequest) {
       message
     );
 
-    const npcReply = await callClaude(systemPrompt, messages);
+    const rawReply = await callClaude(systemPrompt, messages);
+    // 组句辅助命中时，AI会把词块放进回应末尾的[[CHUNKS: ...]]标记里，
+    // 这里把它跟角色台词拆开——DB和对话气泡里只留纯台词，词块单独返回给前端渲染
+    const { reply: npcReply, wordChunks } = extractWordChunks(rawReply);
 
     // 先存玩家发言，再存NPC回应，保持时间顺序
     await appendTurn(eventId, userId, "user", message);
     await appendTurn(eventId, userId, "npc", npcReply);
 
-    return NextResponse.json({ reply: npcReply });
+    return NextResponse.json({ reply: npcReply, wordChunks });
   } catch (err) {
     console.error("Chat turn failed", err);
     return NextResponse.json({ error: "Chat turn failed" }, { status: 500 });

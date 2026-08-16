@@ -5,7 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { listNpcIds, getNpcDisplayName } from "@/lib/npc/registry";
 
-type Message = { role: "user" | "npc"; content: string };
+type Message = {
+  role: "user" | "npc";
+  content: string;
+  // 组句辅助命中时才有：一组可点击复制的词块，渲染在这条NPC消息气泡下方
+  wordChunks?: string[];
+};
 
 type Screen =
   | { name: "select" }
@@ -37,7 +42,21 @@ export default function ChatClient({
   const [sending, setSending] = useState(false);
   const [closing, setClosing] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  // 记录刚被点击复制的词块（用消息索引+词块索引拼key），短暂显示"已复制"再恢复
+  const [copiedChunkKey, setCopiedChunkKey] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  async function handleCopyChunk(key: string, chunk: string) {
+    try {
+      await navigator.clipboard.writeText(chunk);
+      setCopiedChunkKey(key);
+      setTimeout(() => {
+        setCopiedChunkKey((current) => (current === key ? null : current));
+      }, 1200);
+    } catch {
+      // 剪贴板权限被拒绝之类的问题——静默失败就好，不值得打断对话体验
+    }
+  }
 
   // 消息列表变化（新消息 / 发送中占位出现）时自动滚到底部
   useEffect(() => {
@@ -149,7 +168,14 @@ export default function ChatClient({
         return;
       }
       const data = await res.json();
-      setMessages((prev) => [...prev, { role: "npc", content: data.reply }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "npc",
+          content: data.reply,
+          wordChunks: data.wordChunks ?? undefined,
+        },
+      ]);
     } catch {
       setErrorMsg("网络出了点问题，这条消息没发出去。");
     } finally {
@@ -254,15 +280,45 @@ export default function ChatClient({
               </p>
             ) : (
               messages.map((m, i) => (
-                <div
-                  key={i}
-                  className={
-                    m.role === "user"
-                      ? "ml-auto max-w-[80%] rounded-md bg-neutral-100 px-3 py-2 text-sm text-neutral-900"
-                      : "mr-auto max-w-[80%] rounded-md bg-neutral-800 px-3 py-2 text-sm text-neutral-100"
-                  }
-                >
-                  {m.content}
+                <div key={i} className="space-y-1.5">
+                  <div
+                    className={
+                      m.role === "user"
+                        ? "ml-auto max-w-[80%] rounded-md bg-neutral-100 px-3 py-2 text-sm text-neutral-900"
+                        : "mr-auto max-w-[80%] rounded-md bg-neutral-800 px-3 py-2 text-sm text-neutral-100"
+                    }
+                  >
+                    {m.content}
+                  </div>
+
+                  {/* 组句辅助命中时才出现：接在NPC消息后面的独立提示区块，词块可点击复制 */}
+                  {m.role === "npc" && m.wordChunks && m.wordChunks.length > 0 && (
+                    <div className="mr-auto max-w-[80%] rounded-md border border-neutral-800 bg-neutral-900/40 p-2.5">
+                      <p className="mb-1.5 text-xs text-neutral-500">
+                        试着自己拼出来 · 点词块复制
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {m.wordChunks.map((chunk, ci) => {
+                          const key = `${i}-${ci}`;
+                          const isCopied = copiedChunkKey === key;
+                          return (
+                            <button
+                              key={ci}
+                              type="button"
+                              onClick={() => handleCopyChunk(key, chunk)}
+                              className={
+                                isCopied
+                                  ? "rounded border border-emerald-800 bg-emerald-950/40 px-2 py-1 text-xs text-emerald-300"
+                                  : "rounded border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-200 hover:border-neutral-500 hover:bg-neutral-700"
+                              }
+                            >
+                              {isCopied ? "✓ 已复制" : chunk}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))
             )}
