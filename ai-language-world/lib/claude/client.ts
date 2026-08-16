@@ -46,7 +46,7 @@ async function callAnthropic(
     },
     body: JSON.stringify({
       model: ANTHROPIC_MODEL,
-      max_tokens: 600,
+      max_tokens: 2048, // 同上：给足余量，避免schema再变大又要回来调这个数字
       system: systemPrompt,
       messages,
     }),
@@ -104,7 +104,13 @@ async function callOpenAiCompatible(
     },
     body: JSON.stringify({
       model,
-      max_tokens: 600,
+      max_tokens: 2048, // 给足余量——生成的token不会多算钱（大部分供应商按实际生成量计费），设高一点比反复调数字更省心
+      // 针对 openai/gpt-oss-20b、openai/gpt-oss-120b 这类推理模型：
+      // 默认reasoning_effort是medium，会在"隐藏思考"上花掉不少token，
+      // 挤压真正要输出的JSON。这个任务不需要深度推理，调低更聚焦、也更省。
+      // 注意：这个参数是Groq对gpt-oss系列的扩展字段，如果换成别家/别的模型，
+      // 大概率会被直接忽略，不影响调用，但没必要的话可以删掉。
+      reasoning_effort: "low",
       messages: [{ role: "system", content: systemPrompt }, ...messages],
     }),
   });
@@ -115,10 +121,28 @@ async function callOpenAiCompatible(
   }
 
   const data = await response.json();
-  const text = data.choices?.[0]?.message?.content?.trim();
+  const choice = data.choices?.[0];
+  const text = choice?.message?.content?.trim();
+  const finishReason = choice?.finish_reason;
 
   if (!text) {
-    throw new Error("OpenAI兼容接口返回了空内容");
+    // 明确区分"被截断"和"其他原因返回空"——以后不管哪种，日志里直接写清楚，
+    // 不用每次都要重新对着原始响应体猜
+    if (finishReason === "length") {
+      throw new Error(
+        `OpenAI兼容接口输出被截断（max_tokens不够，finish_reason=length）——需要调大max_tokens`
+      );
+    }
+    // Groq对gpt-oss系列的推理内容放在 message.reasoning 字段（不是更常见的
+    // reasoning_content），之前这里检测错了字段名，实际从没生效过
+    const reasoningFallback = choice?.message?.reasoning ?? choice?.message?.reasoning_content;
+    console.error("OpenAI兼容接口返回空content，完整响应：", JSON.stringify(data).slice(0, 2000));
+    throw new Error(
+      `OpenAI兼容接口返回了空内容（finish_reason=${finishReason ?? "unknown"}）` +
+        (reasoningFallback
+          ? "；检测到推理字段里有内容——这个模型把token都花在思考上、没能力/没token数写出最终答案了，需要调低reasoning_effort或调大max_tokens"
+          : "")
+    );
   }
 
   return text;
