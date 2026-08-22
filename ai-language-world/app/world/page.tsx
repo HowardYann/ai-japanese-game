@@ -30,6 +30,12 @@ export default async function WorldPage() {
         <h1 className="text-xl font-semibold">🌏 我的世界档案</h1>
         <div className="flex items-center gap-2">
           <Link
+            href="/home"
+            className="rounded-md border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:text-neutral-100"
+          >
+            今天想做什么
+          </Link>
+          <Link
             href="/chat"
             className="rounded-md border border-neutral-800 px-3 py-1.5 text-xs text-neutral-400 hover:text-neutral-100"
           >
