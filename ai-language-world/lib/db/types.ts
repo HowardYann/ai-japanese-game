@@ -9,6 +9,16 @@ export interface NpcRelationshipRow {
   updated_at: string;
 }
 
+/** Phase 1新增：场景生成结果，见 lib/context/buildScenarioContext.ts 的 ScenarioResult。
+ *  没有走场景生成流程的event（比如直接选NPC聊天）这一列是 null。 */
+export interface EventScenario {
+  goal: string;
+  participants: string;
+  environment: string;
+  possibleTasks: string[];
+  suggestedNpcId: string;
+}
+
 export interface EventRow {
   id: string;
   user_id: string;
@@ -16,6 +26,7 @@ export interface EventRow {
   summary: string | null;
   life_collection_title: string | null;
   language_observations: unknown[];
+  scenario: EventScenario | null;
   created_at: string;
 }
 

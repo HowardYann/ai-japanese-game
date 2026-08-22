@@ -1,14 +1,15 @@
 import { createClient } from "../supabase/server";
-import type { EventRow, ConversationTurnRow } from "./types";
+import type { EventRow, ConversationTurnRow, EventScenario } from "./types";
 
 export async function createEvent(
   userId: string,
-  npcId: string
+  npcId: string,
+  scenario?: EventScenario | null
 ): Promise<EventRow> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("events")
-    .insert({ user_id: userId, npc_id: npcId })
+    .insert({ user_id: userId, npc_id: npcId, scenario: scenario ?? null })
     .select()
     .single();
 
