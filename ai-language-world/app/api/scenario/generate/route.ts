@@ -1,75 +1,49 @@
-// app/api/event/start/route.ts
+// app/api/scenario/generate/route.ts
 //
-// 玩家点击"去找瑞希聊天"时，前端先调这个接口拿到 eventId，
-// 再用这个 eventId 去调 /api/chat 发消息。
+// Phase 1（V2场景驱动改版）：玩家在首页自由输入想体验的事情，
+// 前端调这个接口拿到结构化场景，展示成"Scenario Preview"确认页。
 //
-// Phase 1改动：body可以多带一个可选的 scenario 对象——来自
-// /api/scenario/generate 的返回结果，玩家在Scenario Preview页确认后，
-// 连同（可能被玩家手动改过的）npcId一起传进来。scenario本身不再重新
-// 校验内容合法性（信任它是刚从我们自己的生成接口原样传回来的），
-// 但npcId仍然照旧走getNpcConfig白名单校验，不因为多了scenario就放松。
+// 这一步刻意不写DB——玩家还没点"开始体验"之前产生的场景数据是一次性的，
+// 确认后才由 /api/event/start 把scenario连同npcId一起存进events表，
+// 避免生成了但玩家没用的场景变成脏数据。
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireUserId } from "../../../../lib/supabase/requireUserId";
-import { getNpcConfig } from "../../../../lib/npc/registry";
-import { createEvent } from "../../../../lib/db/events";
-import { getOrCreateRelationship } from "../../../../lib/db/npcRelationships";
-import type { EventScenario } from "../../../../lib/db/types";
-
-function isValidScenario(s: unknown): s is EventScenario {
-  if (typeof s !== "object" || s === null) return false;
-  const obj = s as Record<string, unknown>;
-  return (
-    typeof obj.goal === "string" &&
-    typeof obj.participants === "string" &&
-    typeof obj.environment === "string" &&
-    Array.isArray(obj.possibleTasks) &&
-    typeof obj.suggestedNpcId === "string"
-  );
-}
+import { listNpcIds, getNpcConfig } from "../../../../lib/npc/registry";
+import { buildScenarioContext, parseScenarioResult } from "../../../../lib/context/buildScenarioContext";
+import { callClaude } from "../../../../lib/claude/client";
 
 export async function POST(req: NextRequest) {
-  let userId: string;
   try {
-    userId = await requireUserId();
+    await requireUserId();
   } catch {
     return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
   }
 
   const body = await req.json().catch(() => null);
-  const npcId = body?.npcId;
-  const scenarioInput = body?.scenario;
+  const input = body?.input;
 
-  if (!npcId || typeof npcId !== "string") {
-    return NextResponse.json({ error: "npcId is required" }, { status: 400 });
+  if (!input || typeof input !== "string" || !input.trim()) {
+    return NextResponse.json({ error: "input is required" }, { status: 400 });
   }
+  if (input.trim().length > 300) {
+    // 场景描述不是长文，超长输入大概率不是正常使用，早点拦掉避免prompt被灌注大段无关内容
+    return NextResponse.json({ error: "input too long" }, { status: 400 });
+  }
+
+  const npcIds = listNpcIds();
+  const npcs = npcIds.map((id) => getNpcConfig(id));
+
+  const { systemPrompt, userMessage } = buildScenarioContext(input, npcs);
 
   try {
-    // 校验npcId合法（不存在会抛错）
-    getNpcConfig(npcId);
-  } catch {
-    return NextResponse.json({ error: "Unknown npcId" }, { status: 400 });
-  }
-
-  // scenario是可选的——老的"直接选NPC聊天"流程不带这个字段，行为不变
-  let scenario: EventScenario | null = null;
-  if (scenarioInput !== undefined && scenarioInput !== null) {
-    if (!isValidScenario(scenarioInput)) {
-      return NextResponse.json({ error: "Invalid scenario payload" }, { status: 400 });
-    }
-    scenario = scenarioInput;
-  }
-
-  try {
-    // 确保关系记录存在（首次见面自动初始化）
-    await getOrCreateRelationship(userId, npcId);
-    const event = await createEvent(userId, npcId, scenario);
-
-    return NextResponse.json({ eventId: event.id, npcId });
+    const raw = await callClaude(systemPrompt, [{ role: "user", content: userMessage }]);
+    const scenario = parseScenarioResult(raw, npcIds);
+    return NextResponse.json({ scenario });
   } catch (err) {
-    console.error("Failed to start event", err);
+    console.error("Scenario generation failed", err);
     return NextResponse.json(
-      { error: "Failed to start event" },
+      { error: "Scenario generation failed" },
       { status: 500 }
     );
   }
