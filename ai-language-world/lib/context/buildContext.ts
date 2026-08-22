@@ -10,6 +10,7 @@
 import type { NpcConfig } from "../npc/types";
 import type { NpcRelationshipRow } from "../db/types";
 import type { ConversationTurnRow } from "../db/types";
+import type { EventScenario } from "../db/types";
 
 export interface ClaudeMessage {
   role: "user" | "assistant";
@@ -27,7 +28,8 @@ export interface BuiltContext {
  */
 function buildSystemPrompt(
   npc: NpcConfig,
-  relationship: NpcRelationshipRow
+  relationship: NpcRelationshipRow,
+  scenario?: EventScenario | null
 ): string {
   const { persona, displayName } = npc; // 注意：没有解构 hidden
 
@@ -35,6 +37,25 @@ function buildSystemPrompt(
     Object.keys(relationship.known_facts).length > 0
       ? JSON.stringify(relationship.known_facts, null, 2)
       : "（暂无特别记住的事）";
+
+  // Phase 2（V2场景驱动改版）：如果这场event是从"自由输入场景"生成的，
+  // 把场景目标/环境/可能任务作为一层"今天的场景"叠加在NPC人设之上——
+  // 不替换角色扮演本身，只是给这次互动一个具体的情境锚点。
+  // possibleTasks不是要NPC照本宣科走流程，只是给它一个"这次对话大概会
+  // 自然涉及哪些话题"的参考，实际怎么发生完全由对话本身决定。
+  const scenarioBlock = scenario
+    ? `
+
+# 今天的场景（这次对话的具体情境，务必让对话自然贴合这个场景，而不是泛泛聊天）
+- 玩家今天想做的事：${scenario.goal}
+- 场景环境：${scenario.environment}
+- 参与者：${scenario.participants}
+- 对话中可能自然涉及的话题（仅供参考，不要生硬地逐条完成，让它们像真实对话一样自然出现或不出现）：
+${scenario.possibleTasks.map((t) => `  - ${t}`).join("\n")}
+
+如果这是这场对话的第一条消息（玩家还没发过话），你的开场要贴合上面的场景环境，
+让玩家一进来就有"我正身处这个场景"的感觉，不要用通用的问候语开场。`
+    : "";
 
   return `你正在角色扮演一个名叫「${displayName}」的角色，与玩家进行沉浸式日语对话练习。
 
@@ -44,6 +65,7 @@ function buildSystemPrompt(
 - 背景：${persona.background}
 - 兴趣：${persona.interests.join("、")}
 - 说话方式：${persona.speechStyle}
+${scenarioBlock}
 
 # 你和玩家目前的关系
 - 关系阶段：${relationship.stage}
@@ -109,7 +131,8 @@ export function buildChatContext(
   npc: NpcConfig,
   relationship: NpcRelationshipRow,
   recentTurns: ConversationTurnRow[],
-  newUserMessage: string
+  newUserMessage: string,
+  scenario?: EventScenario | null
 ): BuiltContext {
   // 格式类指令（组句辅助）随对话变长容易被"稀释"——system prompt本身
   // 已经完整讲过一次规则，这里只在发给AI的最后一条消息前追加一句极简提醒，
@@ -119,7 +142,7 @@ export function buildChatContext(
   const reinforcedMessage = `[提醒：如果这轮是玩家用中文表达想说的话，按人设里"组句辅助"的规则来——台词里别念出具体词块，词块单独放进结尾的[[CHUNKS: 词块1|词块2]]标记行，别直接给整句翻译]\n${newUserMessage}`;
 
   return {
-    systemPrompt: buildSystemPrompt(npc, relationship),
+    systemPrompt: buildSystemPrompt(npc, relationship, scenario),
     messages: [
       ...turnsToMessages(recentTurns),
       { role: "user", content: reinforcedMessage },

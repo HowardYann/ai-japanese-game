@@ -49,7 +49,8 @@ export async function POST(req: NextRequest) {
       npc,
       relationship,
       recentTurns,
-      message
+      message,
+      event.scenario
     );
 
     const rawReply = await callClaude(systemPrompt, messages);
