@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
       const { reply, wordChunks } = extractWordChunks(raw);
       await appendTurn(event.id, userId, "npc", reply);
       openingMessage = reply;
-      openingWordChunks = wordChunks;
+      openingWordChunks = wordChunks ?? undefined;
     } catch (openingErr) {
       console.error("生成开场白失败，退回玩家先开口", openingErr);
     }
