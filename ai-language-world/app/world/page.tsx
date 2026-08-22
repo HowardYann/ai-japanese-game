@@ -35,12 +35,6 @@ export default async function WorldPage() {
           >
             今天想做什么
           </Link>
-          <Link
-            href="/chat"
-            className="rounded-md border border-neutral-800 px-3 py-1.5 text-xs text-neutral-400 hover:text-neutral-100"
-          >
-            去聊天
-          </Link>
           <LogoutButton />
         </div>
       </div>

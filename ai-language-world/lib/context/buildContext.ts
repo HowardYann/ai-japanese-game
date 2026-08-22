@@ -112,6 +112,28 @@ ${persona.correctionStyle}
 如果这一轮没有触发组句辅助，就完全不要输出这一行。`;
 }
 
+/**
+ * Phase 4：生成"NPC先开口"的开场白用的context。
+ * 和 buildChatContext 的区别：没有玩家消息可以回应，是让NPC主动起个头。
+ * Claude的messages必须以user角色开头，所以这里用一条"导演提示"当作
+ * 唯一的user消息触发NPC开口——这条提示本身不会被存进conversation_turns，
+ * 也不会被玩家看到，调用方只应该把AI的回复存成一条npc turn。
+ */
+export function buildOpeningContext(
+  npc: NpcConfig,
+  relationship: NpcRelationshipRow,
+  scenario?: EventScenario | null
+): BuiltContext {
+  const directive = scenario
+    ? "[导演提示：这场对话刚开始，玩家还没有说任何话。请直接以角色身份说出第一句台词，让开场自然贴合场景设定里的环境和情境，不需要等玩家先开口，也不要在台词里提到这是\"第一句话\"这种元信息。]"
+    : "[导演提示：这场对话刚开始，玩家还没有说任何话。请直接以角色身份说出第一句台词，像是你注意到玩家、自然地打了个招呼开启对话，不需要等玩家先开口，也不要在台词里提到这是\"第一句话\"这种元信息。]";
+
+  return {
+    systemPrompt: buildSystemPrompt(npc, relationship, scenario),
+    messages: [{ role: "user", content: directive }],
+  };
+}
+
 /** 把DB里的turn记录转成Claude messages格式 */
 function turnsToMessages(turns: ConversationTurnRow[]): ClaudeMessage[] {
   return turns.map((t) => ({

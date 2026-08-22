@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { listNpcIds, getNpcDisplayName } from "@/lib/npc/registry";
+import { getNpcDisplayName } from "@/lib/npc/registry";
+import type { EventFeedback } from "@/lib/db/types";
 
 type Message = {
   role: "user" | "npc";
@@ -13,7 +14,6 @@ type Message = {
 };
 
 type Screen =
-  | { name: "select" }
   | { name: "loading" }
   | { name: "chatting"; npcId: string; eventId: string }
   | {
@@ -21,6 +21,7 @@ type Screen =
       npcId: string;
       eventSummary: string;
       lifeCollectionTitle: string | null;
+      feedback: EventFeedback | null;
     };
 
 // 401统一处理：session过期/未登录，直接送回首页重新登录
@@ -31,12 +32,10 @@ function isUnauthenticated(res: Response) {
 export default function ChatClient({
   initialEventId,
 }: {
-  initialEventId?: string | null;
+  initialEventId: string;
 }) {
   const router = useRouter();
-  const [screen, setScreen] = useState<Screen>(
-    initialEventId ? { name: "loading" } : { name: "select" }
-  );
+  const [screen, setScreen] = useState<Screen>({ name: "loading" });
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -115,10 +114,10 @@ export default function ChatClient({
     };
   }, [showFurigana, messages, furiganaCache, router]);
 
-  // 带着eventId进来（从/world点了"未结束的对话"）：拉取历史turns恢复现场
+  // 带着eventId进来（从/home开完场景，或从/world点了"未结束的对话"）：
+  // 拉取历史turns恢复现场。event/start已经把NPC的开场白存进turns了，
+  // 所以这里拉到的消息列表天然就是"NPC先开口"的效果，不需要额外处理。
   useEffect(() => {
-    if (!initialEventId) return;
-
     let cancelled = false;
     (async () => {
       try {
@@ -130,7 +129,7 @@ export default function ChatClient({
         if (!res.ok) {
           if (cancelled) return;
           setErrorMsg("这场对话找不到了，可能已经不存在。");
-          setScreen({ name: "select" });
+          router.push("/home");
           return;
         }
         const data = await res.json();
@@ -143,6 +142,7 @@ export default function ChatClient({
             npcId: data.npcId,
             eventSummary: data.eventSummary,
             lifeCollectionTitle: data.lifeCollectionTitle ?? null,
+            feedback: data.feedback ?? null,
           });
           return;
         }
@@ -161,7 +161,7 @@ export default function ChatClient({
       } catch {
         if (cancelled) return;
         setErrorMsg("网络出了点问题，没能恢复这场对话。");
-        setScreen({ name: "select" });
+        router.push("/home");
       }
     })();
 
@@ -169,30 +169,6 @@ export default function ChatClient({
       cancelled = true;
     };
   }, [initialEventId, router]);
-
-  async function handleSelectNpc(npcId: string) {
-    setErrorMsg("");
-    try {
-      const res = await fetch("/api/event/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ npcId }),
-      });
-      if (isUnauthenticated(res)) {
-        router.push("/");
-        return;
-      }
-      if (!res.ok) {
-        setErrorMsg("开始对话失败，请重试。");
-        return;
-      }
-      const data = await res.json();
-      setMessages([]);
-      setScreen({ name: "chatting", npcId, eventId: data.eventId });
-    } catch {
-      setErrorMsg("网络出了点问题，请重试。");
-    }
-  }
 
   async function handleSend() {
     if (screen.name !== "chatting" || !input.trim() || sending) return;
@@ -261,6 +237,7 @@ export default function ChatClient({
         npcId,
         eventSummary: data.eventSummary,
         lifeCollectionTitle: data.lifeCollectionTitle ?? null,
+        feedback: data.feedback ?? null,
       });
     } catch {
       setErrorMsg("网络出了点问题，对话还没结束，可以再试一次。");
@@ -290,23 +267,6 @@ export default function ChatClient({
       {screen.name === "loading" && (
         <div className="flex min-h-0 flex-1 items-center justify-center">
           <p className="text-sm text-neutral-500">正在恢复对话…</p>
-        </div>
-      )}
-
-      {screen.name === "select" && (
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
-          <p className="text-sm text-neutral-400">找谁聊聊？</p>
-          {listNpcIds().map((npcId) => (
-            <button
-              key={npcId}
-              onClick={() => handleSelectNpc(npcId)}
-              className="block w-full rounded-md border border-neutral-800 bg-neutral-900/60 p-4 text-left text-sm hover:border-neutral-600"
-            >
-              <span className="font-medium text-neutral-100">
-                {getNpcDisplayName(npcId)}
-              </span>
-            </button>
-          ))}
         </div>
       )}
 
@@ -439,6 +399,45 @@ export default function ChatClient({
             <p className="text-sm text-neutral-200">{screen.eventSummary}</p>
           </div>
 
+          {screen.feedback && screen.feedback.achievements.length > 0 && (
+            <div className="rounded-md border border-emerald-900/40 bg-emerald-950/20 p-4">
+              <p className="mb-2 text-xs font-medium text-emerald-400">
+                刚才你做到了什么？
+              </p>
+              <ul className="space-y-1">
+                {screen.feedback.achievements.map((a, i) => (
+                  <li key={i} className="text-sm text-emerald-200/90">
+                    ✓ {a}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {screen.feedback && screen.feedback.struggles.length > 0 && (
+            <div className="rounded-md border border-amber-900/40 bg-amber-950/10 p-4">
+              <p className="mb-2 text-xs font-medium text-amber-500">
+                你在哪里遇到了困难？
+              </p>
+              <ul className="space-y-1">
+                {screen.feedback.struggles.map((s, i) => (
+                  <li key={i} className="text-sm text-amber-200/80">
+                    △ {s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {screen.feedback && screen.feedback.nextStepSuggestion && (
+            <div className="rounded-md border border-neutral-700 bg-neutral-900/40 p-4">
+              <p className="mb-1 text-xs text-neutral-500">下一步建议</p>
+              <p className="text-sm text-neutral-200">
+                {screen.feedback.nextStepSuggestion}
+              </p>
+            </div>
+          )}
+
           {screen.lifeCollectionTitle && (
             <div className="rounded-md border border-amber-900/40 bg-amber-950/20 p-4">
               <p className="mb-1 text-xs text-amber-400">🏆 新的人生收藏</p>
@@ -450,10 +449,10 @@ export default function ChatClient({
 
           <div className="flex gap-3">
             <button
-              onClick={() => setScreen({ name: "select" })}
+              onClick={() => router.push("/home")}
               className="rounded-md bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-900"
             >
-              开始新的对话
+              开始新的体验
             </button>
             <Link
               href="/world"

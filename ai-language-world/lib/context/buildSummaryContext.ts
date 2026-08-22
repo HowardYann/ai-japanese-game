@@ -39,6 +39,10 @@ export interface LanguageObservation {
 /** AI应该返回的JSON结构（后端解析后使用） */
 export interface SummaryResult {
   eventSummary: string;
+  /** Phase 5：三段式反馈，对照V2文档第10节，替代"学了几个词/几个语法"这种展示方式 */
+  achievements: string[]; // ✓ 做到了什么
+  struggles: string[]; // △ 卡在哪里
+  nextStepSuggestion: string; // 下一步建议
   relationshipSummary: string;
   relationshipStage: "初识" | "熟悉中" | "熟悉" | "亲近";
   knownFacts: Record<string, string>;
@@ -91,6 +95,9 @@ JSON结构必须是：
 
 {
   "eventSummary": "用第三人称、1-2句话客观描述这次对话发生了什么，给玩家看的事件时间线用",
+  "achievements": ["玩家这场对话里真正做到的具体事情，用玩家能看懂的第二人称口吻，2-4条，例如'能够自然介绍自己最近看的电影'、'能听懂对方的追问并给出相关的回应'；只写观察到的、玩家自己完成的事，不要泛泛地写'完成了一次对话'这种空话，如果这场对话确实很短、几乎没有做成什么，可以只给1条或者如实写'完成了简短的自我介绍'这种小事，不要为了凑数量夸大"],
+  "struggles": ["玩家这场对话里卡住、或者需要NPC纠正/帮助才能继续的地方，用玩家能看懂的第二人称口吻，1-3条，例如'当对方突然追问细节时，很难继续展开'、'不确定该怎么礼貌地转移话题'；如果这场对话玩家表现很顺畅没有明显卡点，返回空数组[]，不要硬造"],
+  "nextStepSuggestion": "基于这场对话的表现，给玩家一个具体的、稍微进一步的下一步挑战建议，1句话，例如'下次可以试着和一个刚认识的人聊10分钟，并主动提出两个问题'；要具体到'做什么事'，不是'多练习口语'这种空泛建议",
   "relationshipSummary": "整体重写关系摘要，合并旧摘要和这次新发生的内容，2-4句话，不是追加而是覆盖式重写",
   "relationshipStage": "初识 | 熟悉中 | 熟悉 | 亲近 中的一个（根据对话质量和次数判断是否该推进，不确定就保持不变）",
   "knownFacts": { "键": "值", "...": "..." }，把旧的known_facts和这次新透露的事合并成的最新版本（键用简短的中文短语，比如"日语自学方法"，值是具体内容；没有新增就原样返回旧的）,
@@ -107,6 +114,8 @@ JSON结构必须是：
 }
 
 判断标准：
+- achievements/struggles 要基于对话记录里真实发生的事，不要脱离对话内容泛泛而谈；如果languageObservations里有unassisted的用法，通常对应achievements；有corrected/scaffolded的用法，通常对应struggles，但不是机械映射，用你对整场对话的理解来写
+- nextStepSuggestion 要衔接这次的表现，是"往前一小步"，不是重新开始或者跳跃太大
 - lifeCollectionTitle 不需要每次都有，普通寒暄对话应该返回 null，不要为了有而硬造
 - relationshipStage 的推进要谨慎，一两次对话不足以从"初识"跳到"熟悉"
 - 如果对话内容很短（比如玩家只发了一两条消息就结束），仍然要正常输出JSON，eventSummary可以如实反映"简短的互动"
@@ -146,6 +155,21 @@ export function parseSummaryResult(raw: string): SummaryResult {
   if (typeof p.eventSummary !== "string" || !p.eventSummary.trim()) {
     throw new Error("Summary缺少合法的eventSummary");
   }
+
+  // achievements/struggles：单条格式不对就丢弃，不因为这个字段的瑕疵让整个总结失败
+  const achievements = Array.isArray(p.achievements)
+    ? p.achievements.filter(
+        (a): a is string => typeof a === "string" && a.trim().length > 0
+      )
+    : [];
+  const struggles = Array.isArray(p.struggles)
+    ? p.struggles.filter(
+        (s): s is string => typeof s === "string" && s.trim().length > 0
+      )
+    : [];
+  const nextStepSuggestion =
+    typeof p.nextStepSuggestion === "string" ? p.nextStepSuggestion.trim() : "";
+
   if (typeof p.relationshipSummary !== "string" || !p.relationshipSummary.trim()) {
     throw new Error("Summary缺少合法的relationshipSummary");
   }
@@ -194,6 +218,9 @@ export function parseSummaryResult(raw: string): SummaryResult {
 
   return {
     eventSummary: p.eventSummary.trim(),
+    achievements,
+    struggles,
+    nextStepSuggestion,
     relationshipSummary: p.relationshipSummary.trim(),
     relationshipStage: p.relationshipStage,
     knownFacts: p.knownFacts as Record<string, string>,

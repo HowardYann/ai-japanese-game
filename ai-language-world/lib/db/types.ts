@@ -19,6 +19,14 @@ export interface EventScenario {
   suggestedNpcId: string;
 }
 
+/** Phase 5新增：结束时的三段式反馈，见 buildSummaryContext.ts 的 SummaryResult。
+ *  走了降级兜底路径的event，这一列是 null。 */
+export interface EventFeedback {
+  achievements: string[];
+  struggles: string[];
+  nextStepSuggestion: string;
+}
+
 export interface EventRow {
   id: string;
   user_id: string;
@@ -27,6 +35,7 @@ export interface EventRow {
   life_collection_title: string | null;
   language_observations: unknown[];
   scenario: EventScenario | null;
+  feedback: EventFeedback | null;
   created_at: string;
 }
 

@@ -34,6 +34,7 @@ export async function GET(
       closed: !!event.summary,
       eventSummary: event.summary,
       lifeCollectionTitle: event.life_collection_title,
+      feedback: event.feedback,
       turns: turns.map((t) => ({ role: t.role, content: t.content })),
     });
   } catch {

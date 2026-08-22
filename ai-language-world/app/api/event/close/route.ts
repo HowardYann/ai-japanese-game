@@ -59,6 +59,7 @@ export async function POST(req: NextRequest) {
         eventId: event.id,
         eventSummary: event.summary,
         lifeCollectionTitle: event.life_collection_title,
+        feedback: event.feedback,
         alreadyClosed: true,
       });
     }
@@ -93,6 +94,7 @@ export async function POST(req: NextRequest) {
         eventId: fallbackEvent.id,
         eventSummary: fallbackEvent.summary,
         lifeCollectionTitle: fallbackEvent.life_collection_title,
+        feedback: null,
         alreadyClosed: false,
         summaryDegraded: true,
       });
@@ -108,6 +110,11 @@ export async function POST(req: NextRequest) {
         text: result.eventSummary,
         lifeCollectionTitle: result.lifeCollectionTitle,
         languageObservations: result.languageObservations,
+        feedback: {
+          achievements: result.achievements,
+          struggles: result.struggles,
+          nextStepSuggestion: result.nextStepSuggestion,
+        },
       }),
     ]);
 
@@ -121,6 +128,7 @@ export async function POST(req: NextRequest) {
       eventId: updatedEvent.id,
       eventSummary: updatedEvent.summary,
       lifeCollectionTitle: updatedEvent.life_collection_title,
+      feedback: updatedEvent.feedback,
       relationshipStage: updatedRelationship.stage,
       alreadyClosed: false,
     });

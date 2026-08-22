@@ -12,8 +12,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUserId } from "../../../../lib/supabase/requireUserId";
 import { getNpcConfig } from "../../../../lib/npc/registry";
-import { createEvent } from "../../../../lib/db/events";
+import { createEvent, appendTurn } from "../../../../lib/db/events";
 import { getOrCreateRelationship } from "../../../../lib/db/npcRelationships";
+import { buildOpeningContext } from "../../../../lib/context/buildContext";
+import { callClaude } from "../../../../lib/claude/client";
+import { extractWordChunks } from "../../../../lib/chat/extractWordChunks";
 import type { EventScenario } from "../../../../lib/db/types";
 
 function isValidScenario(s: unknown): s is EventScenario {
@@ -62,10 +65,32 @@ export async function POST(req: NextRequest) {
 
   try {
     // 确保关系记录存在（首次见面自动初始化）
-    await getOrCreateRelationship(userId, npcId);
+    const relationship = await getOrCreateRelationship(userId, npcId);
+    const npc = getNpcConfig(npcId);
     const event = await createEvent(userId, npcId, scenario);
 
-    return NextResponse.json({ eventId: event.id, npcId });
+    // Phase 4：NPC先开口。这一步失败不应该让"开始体验"整体失败——
+    // 最坏情况就是退回旧行为（玩家进聊天页看到的是空消息列表，自己先打招呼），
+    // 事件本身已经创建成功，不能因为开场白生成失败就前功尽弃。
+    let openingMessage: string | null = null;
+    let openingWordChunks: string[] | undefined;
+    try {
+      const { systemPrompt, messages } = buildOpeningContext(npc, relationship, scenario);
+      const raw = await callClaude(systemPrompt, messages);
+      const { reply, wordChunks } = extractWordChunks(raw);
+      await appendTurn(event.id, userId, "npc", reply);
+      openingMessage = reply;
+      openingWordChunks = wordChunks;
+    } catch (openingErr) {
+      console.error("生成开场白失败，退回玩家先开口", openingErr);
+    }
+
+    return NextResponse.json({
+      eventId: event.id,
+      npcId,
+      openingMessage,
+      openingWordChunks,
+    });
   } catch (err) {
     console.error("Failed to start event", err);
     return NextResponse.json(

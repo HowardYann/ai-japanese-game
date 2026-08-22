@@ -1,5 +1,5 @@
 import { createClient } from "../supabase/server";
-import type { EventRow, ConversationTurnRow, EventScenario } from "./types";
+import type { EventRow, ConversationTurnRow, EventScenario, EventFeedback } from "./types";
 
 export async function createEvent(
   userId: string,
@@ -112,6 +112,7 @@ export async function closeEvent(
     text: string;
     lifeCollectionTitle?: string | null;
     languageObservations?: unknown[];
+    feedback?: EventFeedback | null;
   }
 ): Promise<EventRow> {
   await getOwnedEvent(eventId, userId);
@@ -123,6 +124,7 @@ export async function closeEvent(
       summary: summary.text,
       life_collection_title: summary.lifeCollectionTitle ?? null,
       language_observations: summary.languageObservations ?? [],
+      feedback: summary.feedback ?? null,
     })
     .eq("id", eventId)
     .eq("user_id", userId)
