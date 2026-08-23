@@ -12,32 +12,31 @@
 export interface ExtractedReply {
   reply: string;
   wordChunks: string[] | null;
+  suggestClose: boolean;
 }
 
 const CHUNK_MARKER_RE = /\[\[CHUNKS:\s*([^\]]*)\]\]/i;
+const SUGGEST_CLOSE_RE = /\[\[SUGGEST_CLOSE\]\]/i;
 
 export function extractWordChunks(rawText: string): ExtractedReply {
-  const trimmedRaw = rawText.trim();
-  const match = trimmedRaw.match(CHUNK_MARKER_RE);
+  let text = rawText.trim();
 
+  const suggestClose = SUGGEST_CLOSE_RE.test(text);
+  text = text.replace(SUGGEST_CLOSE_RE, "").trim();
+
+  const match = text.match(CHUNK_MARKER_RE);
   if (!match) {
-    return { reply: trimmedRaw, wordChunks: null };
+    return { reply: text, wordChunks: null, suggestClose };
   }
 
-  const chunks = match[1]
-    .split("|")
-    .map((s) => s.trim())
-    .filter(Boolean);
-
+  const chunks = match[1].split("|").map((s) => s.trim()).filter(Boolean);
   const withoutMarker = (
-    trimmedRaw.slice(0, match.index) +
-    trimmedRaw.slice((match.index ?? 0) + match[0].length)
+    text.slice(0, match.index) + text.slice((match.index ?? 0) + match[0].length)
   ).trim();
 
   return {
-    // 兜底：万一AI整条回应就只有标记本身（没有正常台词），
-    // 别把台词吃成空字符串——保留原文，让玩家至少看到点东西，而不是空气泡。
-    reply: withoutMarker || trimmedRaw,
+    reply: withoutMarker || text,
     wordChunks: chunks.length > 0 ? chunks : null,
+    suggestClose,
   };
 }

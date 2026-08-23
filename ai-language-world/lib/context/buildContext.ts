@@ -170,7 +170,12 @@ export function buildChatContext(
     progressHint = `\n[提醒：如果目前一直在讨论要不要做某件事，可以考虑让活动实际开始]`;
   }
 
-  const reinforcedMessage = `[提醒：如果这轮是玩家用中文表达想说的话，按人设里"组句辅助"的规则来——台词里别念出具体词块，词块单独放进结尾的[[CHUNKS: 词块1|词块2]]标记行，别直接给整句翻译]${progressHint}\n${newUserMessage}`;
+  const reinforcedMessage = `[提醒：如果这轮是玩家用中文表达想说的话，按人设里"组句辅助"的规则来——台词里别念出具体词块，词块单独放进结尾的[[CHUNKS: 词块1|词块2]]标记行，别直接给整句翻译]${progressHint}\n${newUserMessage}\n[------
+      # 关于场景收尾信号
+      如果你判断这次场景想做的事已经达成（比如已经约好了具体的时间地点/事情已经说清楚了），
+      且继续聊下去不会有新内容，在这一轮回应的**最后一行**追加一个标记：[[SUGGEST_CLOSE]]
+      这个标记不会被玩家看到，只是给系统一个信号，不影响你台词本身的自然收尾。
+      没有达到这个程度就不要加这个标记。]`;
 
   return {
     systemPrompt: buildSystemPrompt(npc, relationship, scenario),

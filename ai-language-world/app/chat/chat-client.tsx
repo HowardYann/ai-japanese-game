@@ -11,6 +11,7 @@ type Message = {
   content: string;
   // 组句辅助命中时才有：一组可点击复制的词块，渲染在这条NPC消息气泡下方
   wordChunks?: string[];
+  suggestClose?: boolean;
 };
 
 type Screen =
@@ -215,6 +216,7 @@ export default function ChatClient({
           role: "npc",
           content: data.reply,
           wordChunks: data.wordChunks ?? undefined,
+          suggestClose: data.suggestClose,
         },
       ]);
     } catch {
@@ -383,6 +385,20 @@ export default function ChatClient({
             <div ref={messagesEndRef} />
           </div>
 
+        {messages.length > 0 &&
+          messages[messages.length - 1].role === "npc" &&
+          messages[messages.length - 1].suggestClose && (
+            <div className="mb-3 flex items-center justify-between rounded-md border border-neutral-800 bg-neutral-900/60 px-3 py-2 text-xs text-neutral-400">
+              <span>这次的事看起来已经聊定了，要不要在这里先告一段落？</span>
+              <button
+                onClick={handleClose}
+                className="ml-3 shrink-0 rounded-md border border-neutral-700 px-2 py-1 text-neutral-200 hover:border-neutral-500"
+              >
+                结束对话
+              </button>
+            </div>
+          )}
+          
           <form
             onSubmit={(e) => {
               e.preventDefault();
