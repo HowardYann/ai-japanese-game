@@ -161,7 +161,16 @@ export function buildChatContext(
   // 每一轮都重新提醒一次，不依赖"AI记得开头说过的话"。
   // 注意：这个提醒只出现在发给Claude的这份拷贝里，appendTurn存的仍然是
   // 玩家的原始输入，不会被这条提醒污染。
-  const reinforcedMessage = `[提醒：如果这轮是玩家用中文表达想说的话，按人设里"组句辅助"的规则来——台词里别念出具体词块，词块单独放进结尾的[[CHUNKS: 词块1|词块2]]标记行，别直接给整句翻译]\n${newUserMessage}`;
+  const turnCount = recentTurns.length;
+  let progressHint = "";
+  if (scenario && turnCount >= 16) {
+    progressHint = `\n[提醒：这场对话已经进行了不少轮了，如果目标事件（${scenario.goal}）还停留在"要不要做/什么时候做"的讨论阶段，
+考虑让它自然地实际发生、或者朝一个自然的收尾方向推进，不要一直停在计划阶段打转]`;
+  } else if (scenario && turnCount >= 8) {
+    progressHint = `\n[提醒：如果目前一直在讨论要不要做某件事，可以考虑让活动实际开始]`;
+  }
+
+  const reinforcedMessage = `[提醒：如果这轮是玩家用中文表达想说的话，按人设里"组句辅助"的规则来——台词里别念出具体词块，词块单独放进结尾的[[CHUNKS: 词块1|词块2]]标记行，别直接给整句翻译]${progressHint}\n${newUserMessage}`;
 
   return {
     systemPrompt: buildSystemPrompt(npc, relationship, scenario),

@@ -52,6 +52,7 @@ export interface SummaryResult {
 
 const VALID_STAGES = ["初识", "熟悉中", "熟悉", "亲近"] as const;
 
+
 export function isValidStage(
   s: unknown
 ): s is SummaryResult["relationshipStage"] {
@@ -71,7 +72,9 @@ export function buildSummaryContext(
   turns: ConversationTurnRow[]
 ): SummaryContext {
   const { persona, displayName } = npc; // 白名单：不解构hidden
-
+  const nameNote = relationship.known_facts.playerName
+  ? `你已经知道玩家叫"${relationship.known_facts.playerName}"。`
+  : `你还不知道玩家的名字（如果对话自然进行到合适的时机，可以礼貌地问一下，但不要生硬地一上来就问）。`;
   const knownFactsText =
     Object.keys(relationship.known_facts).length > 0
       ? JSON.stringify(relationship.known_facts, null, 2)

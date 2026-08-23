@@ -1,5 +1,25 @@
 import { createClient } from "../supabase/server";
 import type { EventRow, ConversationTurnRow, EventScenario, EventFeedback } from "./types";
+/** 查这个玩家和这个NPC之间，有没有还没关档的event（summary为null）。
+ *  用于避免"开始新体验"时又造一个新的待续对话。 */
+export async function getOpenEventForNpc(
+  userId: string,
+  npcId: string
+): Promise<EventRow | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("events")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("npc_id", npcId)
+    .is("summary", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data as EventRow | null;
+}
 
 export async function createEvent(
   userId: string,

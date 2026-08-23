@@ -13,7 +13,7 @@ import ChatClient from "./chat-client";
 export default async function ChatPage({
   searchParams,
 }: {
-  searchParams: Promise<{ eventId?: string }>;
+  searchParams: Promise<{ eventId?: string; resumed?: string }>;
 }) {
   const supabase = await createClient();
   const {
@@ -24,11 +24,11 @@ export default async function ChatPage({
     redirect("/");
   }
 
-  const { eventId } = await searchParams;
+  const { eventId, resumed } = await searchParams;
 
   if (!eventId) {
     redirect("/home");
   }
-
-  return <ChatClient initialEventId={eventId} />;
+  return <ChatClient initialEventId={eventId} resumed={resumed === "1"} />;
+  
 }

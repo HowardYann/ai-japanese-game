@@ -24,3 +24,7 @@ export function listNpcIds(): string[] {
 export function getNpcDisplayName(npcId: string): string {
   return NPC_REGISTRY[npcId]?.displayName ?? npcId;
 }
+ 
+export function defaultParticipantsFor(npc: NpcConfig): string {
+  return `${npc.persona.identity}${npc.displayName}（${npc.displayName}），${npc.persona.personality}`;
+}

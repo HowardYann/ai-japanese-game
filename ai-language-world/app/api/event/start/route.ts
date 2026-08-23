@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUserId } from "../../../../lib/supabase/requireUserId";
 import { getNpcConfig } from "../../../../lib/npc/registry";
-import { createEvent, appendTurn } from "../../../../lib/db/events";
+import { createEvent, getOpenEventForNpc, appendTurn } from "../../../../lib/db/events";
 import { getOrCreateRelationship } from "../../../../lib/db/npcRelationships";
 import { buildOpeningContext } from "../../../../lib/context/buildContext";
 import { callClaude } from "../../../../lib/claude/client";
@@ -67,6 +67,17 @@ export async function POST(req: NextRequest) {
     // 确保关系记录存在（首次见面自动初始化）
     const relationship = await getOrCreateRelationship(userId, npcId);
     const npc = getNpcConfig(npcId);
+    // 有未结束的对话就续聊，不新开一个——避免堆积一堆待续事件
+    const openEvent = await getOpenEventForNpc(userId, npcId);
+    if (openEvent) {
+      return NextResponse.json({
+        eventId: openEvent.id,
+        npcId,
+        resumed: true,       // 前端可选：用这个字段提示"继续上次的对话"
+        openingMessage: null,
+        openingWordChunks: undefined,
+      });
+    }
     const event = await createEvent(userId, npcId, scenario);
 
     // Phase 4：NPC先开口。这一步失败不应该让"开始体验"整体失败——

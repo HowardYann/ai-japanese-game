@@ -29,10 +29,13 @@ function isUnauthenticated(res: Response) {
   return res.status === 401;
 }
 
+
 export default function ChatClient({
   initialEventId,
+  resumed = false,
 }: {
   initialEventId: string;
+  resumed?: boolean;
 }) {
   const router = useRouter();
   const [screen, setScreen] = useState<Screen>({ name: "loading" });
@@ -50,16 +53,26 @@ export default function ChatClient({
   const [furiganaCache, setFuriganaCache] = useState<Record<string, string>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  async function handleCopyChunk(key: string, chunk: string) {
-    try {
-      await navigator.clipboard.writeText(chunk);
-      setCopiedChunkKey(key);
-      setTimeout(() => {
-        setCopiedChunkKey((current) => (current === key ? null : current));
-      }, 1200);
-    } catch {
-      // 剪贴板权限被拒绝之类的问题——静默失败就好，不值得打断对话体验
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function handleInsertChunk(key: string, chunk: string) {
+    const el = inputRef.current;
+    if (!el) {
+      setInput((prev) => prev + chunk);
+      return;
     }
+    const start = el.selectionStart ?? input.length;
+    const end = el.selectionEnd ?? input.length;
+    const next = input.slice(0, start) + chunk + input.slice(end);
+    setInput(next);
+    setCopiedChunkKey(key);
+    setTimeout(() => setCopiedChunkKey((c) => (c === key ? null : c)), 1200);
+
+    const pos = start + chunk.length;
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    });
   }
 
   // 消息列表变化（新消息 / 发送中占位出现）时自动滚到底部
@@ -297,6 +310,12 @@ export default function ChatClient({
             </div>
           </div>
 
+          {resumed && (
+            <p className="mb-3 text-xs text-neutral-500">
+              继续你和 {getNpcDisplayName(screen.npcId)} 之前没聊完的对话
+            </p>
+          )}
+          
           <div className="mb-4 min-h-0 flex-1 space-y-3 overflow-y-auto rounded-md border border-neutral-800 p-4">
             {messages.length === 0 ? (
               <p className="text-sm text-neutral-500">
@@ -339,7 +358,7 @@ export default function ChatClient({
                             <button
                               key={ci}
                               type="button"
-                              onClick={() => handleCopyChunk(key, chunk)}
+                              onClick={() => handleInsertChunk(key, chunk)}
                               className={
                                 isCopied
                                   ? "rounded border border-emerald-800 bg-emerald-950/40 px-2 py-1 text-xs text-emerald-300"
@@ -372,6 +391,7 @@ export default function ChatClient({
             className="flex gap-2"
           >
             <input
+              ref={inputRef}
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}

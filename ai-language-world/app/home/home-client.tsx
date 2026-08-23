@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { listNpcIds, getNpcDisplayName } from "@/lib/npc/registry";
+import { listNpcIds, getNpcDisplayName, getNpcConfig, defaultParticipantsFor } from "@/lib/npc/registry";
 import type { EventScenario } from "@/lib/db/types";
 
 // v1：先用几条写死的推荐场景跑通闭环，不接真实推荐算法（对照V2文档第5节，
@@ -115,7 +115,8 @@ export default function HomeClient() {
         return;
       }
       const data = await res.json();
-      router.push(`/chat?eventId=${data.eventId}`);
+      const suffix = data.resumed ? "&resumed=1" : "";
+      router.push(`/chat?eventId=${data.eventId}${suffix}`);
     } catch {
       setErrorMsg("网络出了点问题，请重试。");
       setScreen({ name: "entry" });
@@ -141,7 +142,8 @@ export default function HomeClient() {
         return;
       }
       const data = await res.json();
-      router.push(`/chat?eventId=${data.eventId}`);
+      const suffix = data.resumed ? "&resumed=1" : "";
+      router.push(`/chat?eventId=${data.eventId}${suffix}`);
     } catch {
       setErrorMsg("网络出了点问题，请重试。");
       setScreen({ name: "preview", scenario });
@@ -236,7 +238,7 @@ export default function HomeClient() {
           scenario={screen.scenario}
           sourceLabel={screen.sourceLabel}
           onBack={() => setScreen({ name: "entry" })}
-          onConfirm={(npcId) => handleConfirmScenario(screen.scenario, npcId)}
+          onConfirm={(npcId, effectiveScenario) => handleConfirmScenario(effectiveScenario, npcId)}
         />
       )}
 
@@ -258,11 +260,17 @@ function ScenarioPreview({
   scenario: EventScenario;
   sourceLabel?: string;
   onBack: () => void;
-  onConfirm: (npcId: string) => void;
+  onConfirm: (npcId: string, effectiveScenario: EventScenario) => void;
 }) {
   // 玩家可以在预览页手动改成另一个NPC，不强制信任AI给的suggestedNpcId
   const [npcId, setNpcId] = useState(scenario.suggestedNpcId);
-
+  function handleConfirm() {
+    const effectiveScenario =
+      npcId === scenario.suggestedNpcId
+        ? scenario
+        : { ...scenario, participants: defaultParticipantsFor(getNpcConfig(npcId)) };
+    onConfirm(npcId, effectiveScenario); // onConfirm签名要相应加一个参数
+  }
   return (
     <div className="space-y-4">
       {sourceLabel && <p className="text-sm text-neutral-500">{sourceLabel}</p>}
@@ -296,7 +304,7 @@ function ScenarioPreview({
 
       <div className="flex gap-3">
         <button
-          onClick={() => onConfirm(npcId)}
+          onClick={() => handleConfirm()}
           className="rounded-md bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-900"
         >
           开始体验
