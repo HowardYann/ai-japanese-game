@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireUserId } from "../../../lib/supabase/requireUserId";
-import { getNpcConfig } from "../../../lib/npc/registry";
+import { getNpcConfigForUser } from "../../../lib/npc/registry";
 import { getOrCreateRelationship } from "../../../lib/db/npcRelationships";
 import { getTurnsForEvent, appendTurn, getOwnedEvent } from "../../../lib/db/events";
 import { buildChatContext } from "../../../lib/context/buildContext";
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
   try {
     // 归属权校验 + 拿出这场事件是跟哪个NPC聊的
     const event = await getOwnedEvent(eventId, userId);
-    const npc = getNpcConfig(event.npc_id);
+    const npc = await getNpcConfigForUser(event.npc_id, userId);
 
     const [relationship, recentTurns] = await Promise.all([
       getOrCreateRelationship(userId, event.npc_id),

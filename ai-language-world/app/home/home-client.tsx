@@ -24,6 +24,8 @@ const RECOMMENDED: { label: string; scenario: EventScenario }[] = [
         "在对话结束时礼貌地表达期待下次交流的愿望",
       ],
       suggestedNpcId: "mizuki",
+      needsNewNpc: false,
+      newNpcDraft: null,
     },
   },
   {
@@ -39,6 +41,8 @@ const RECOMMENDED: { label: string; scenario: EventScenario }[] = [
         "结束用餐时自然地道别",
       ],
       suggestedNpcId: "taisho",
+      needsNewNpc: false,
+      newNpcDraft: null,
     },
   },
 ];
@@ -263,12 +267,25 @@ function ScenarioPreview({
   onConfirm: (npcId: string, effectiveScenario: EventScenario) => void;
 }) {
   // 玩家可以在预览页手动改成另一个NPC，不强制信任AI给的suggestedNpcId
-  const [npcId, setNpcId] = useState(scenario.suggestedNpcId);
+  //
+  // Phase 6注意：scenario.needsNewNpc=true 时 suggestedNpcId 是 null——
+  // 这种情况下"新角色是谁"这件事本该由专门的UI展示newNpcDraft并让玩家确认，
+  // 但那部分UI还没做（这一轮先落地后端：审核、落库、resolve逻辑），
+  // 暂时先兜底成"退回选一个现有NPC"，不让这个屏幕直接崩掉。
+  // TODO(Phase 6 UI)：needsNewNpc时应该展示newNpcDraft的人设预览，
+  // 而不是走下面这个"选现有NPC"的分支。
+  const [npcId, setNpcId] = useState(scenario.suggestedNpcId ?? listNpcIds()[0]);
   function handleConfirm() {
-    const effectiveScenario =
-      npcId === scenario.suggestedNpcId
+    const effectiveScenario: EventScenario =
+      npcId === scenario.suggestedNpcId && !scenario.needsNewNpc
         ? scenario
-        : { ...scenario, participants: defaultParticipantsFor(getNpcConfig(npcId)) };
+        : {
+            ...scenario,
+            participants: defaultParticipantsFor(getNpcConfig(npcId)),
+            suggestedNpcId: npcId,
+            needsNewNpc: false,
+            newNpcDraft: null,
+          };
     onConfirm(npcId, effectiveScenario); // onConfirm签名要相应加一个参数
   }
   return (

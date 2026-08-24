@@ -15,7 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { requireUserId } from "../../../../lib/supabase/requireUserId";
-import { getNpcConfig } from "../../../../lib/npc/registry";
+import { getNpcConfigForUser } from "../../../../lib/npc/registry";
 import {
   getOrCreateRelationship,
   updateRelationshipSummary,
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const npc = getNpcConfig(event.npc_id);
+    const npc = await getNpcConfigForUser(event.npc_id, userId);
 
     const [relationship, turns] = await Promise.all([
       getOrCreateRelationship(userId, event.npc_id),

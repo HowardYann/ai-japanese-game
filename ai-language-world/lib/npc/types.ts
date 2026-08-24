@@ -38,4 +38,12 @@ export interface NpcConfig {
   displayName: string;
   persona: NpcPersona;
   hidden: NpcHidden;
+  /**
+   * Phase 6新增：静态内置NPC（mizuki/taisho）这两个字段永远是undefined。
+   * 玩家自建/场景中生成的NPC才会有值——ownerId用于权限相关的调用方判断
+   * （比如要不要展示"丢弃这个人物"的入口），不会被喂进prompt
+   * （buildSystemPrompt本来就是白名单取字段，这里加字段不影响那份纪律）。
+   */
+  ownerId?: string;
+  source?: "created" | "emergent";
 }
