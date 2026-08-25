@@ -15,7 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { requireUserId } from "../../../../lib/supabase/requireUserId";
-import { getNpcConfigForUser } from "../../../../lib/npc/registry";
+import { getNpcConfigForUser } from "../../../../lib/npc/registryServer";
 import {
   getOrCreateRelationship,
   updateRelationshipSummary,

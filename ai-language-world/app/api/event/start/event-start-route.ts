@@ -18,7 +18,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireUserId } from "../../../../lib/supabase/requireUserId";
-import { getNpcConfigForUser } from "../../../../lib/npc/registry";
+import { getNpcConfigForUser } from "../../../../lib/npc/registryServer";
 import { createNpc } from "../../../../lib/db/npcs";
 import { enforcePersonaSafety, PersonaRejectedError } from "../../../../lib/npc/enforcePersonaSafety";
 import { createEvent, getOpenEventForNpc, appendTurn } from "../../../../lib/db/events";

@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireUserId } from "../../../lib/supabase/requireUserId";
-import { getNpcConfigForUser } from "../../../lib/npc/registry";
+import { getNpcConfigForUser } from "../../../lib/npc/registryServer";
 import { getOrCreateRelationship } from "../../../lib/db/npcRelationships";
 import { getTurnsForEvent, appendTurn, getOwnedEvent } from "../../../lib/db/events";
 import { buildChatContext } from "../../../lib/context/buildContext";
