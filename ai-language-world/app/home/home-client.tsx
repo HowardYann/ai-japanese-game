@@ -228,6 +228,16 @@ export default function HomeClient() {
               </button>
             </div>
           </section>
+
+          <section>
+            <h2 className="mb-3 text-sm font-medium text-neutral-300">创造</h2>
+            <Link
+              href="/npc/new"
+              className="block w-full rounded-md border border-dashed border-neutral-700 bg-neutral-900/30 p-4 text-left text-sm text-neutral-400 hover:border-neutral-500 hover:text-neutral-100"
+            >
+              + 创建一个只有你能认识的人
+            </Link>
+          </section>
         </div>
       )}
 
