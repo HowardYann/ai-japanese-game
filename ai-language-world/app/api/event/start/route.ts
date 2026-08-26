@@ -137,6 +137,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         eventId: openEvent.id,
         npcId,
+        npcDisplayName: npc.displayName,
         resumed: true,       // 前端可选：用这个字段提示"继续上次的对话"
         openingMessage: null,
         openingWordChunks: undefined,
@@ -163,6 +164,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       eventId: event.id,
       npcId,
+      npcDisplayName: npc.displayName,
       openingMessage,
       openingWordChunks,
     });

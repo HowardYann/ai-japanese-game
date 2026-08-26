@@ -4,7 +4,7 @@ import Link from "next/link";
 import LogoutButton from "./logout-button";
 import { listRelationshipsForUser } from "@/lib/db/npcRelationships";
 import { listEventsForUser } from "@/lib/db/events";
-import { getNpcDisplayName } from "@/lib/npc/registry";
+import { getNpcDisplayNameForUser } from "@/lib/npc/registryServer";
 
 export default async function WorldPage() {
   const supabase = await createClient();
@@ -23,6 +23,19 @@ export default async function WorldPage() {
   ]);
 
   const lifeCollections = events.filter((e) => e.life_collection_title);
+
+  // Phase 6.1：relationships/events里的npc_id现在也可能是玩家自建/涌现的动态NPC，
+  // 静态registry查不到——世界档案页是服务端组件，可以放心用registryServer那套
+  // 会查DB的函数（不像home-client.tsx/chat-client.tsx是客户端组件，不能碰这个）。
+  // 提前把这一页会用到的npc_id去重、批量解析一次，避免同一个id重复查DB。
+  const npcIds = Array.from(
+    new Set([...relationships.map((r) => r.npc_id), ...events.map((e) => e.npc_id)])
+  );
+  const npcDisplayNameEntries = await Promise.all(
+    npcIds.map(async (id) => [id, await getNpcDisplayNameForUser(id, user.id)] as const)
+  );
+  const npcDisplayNames = new Map(npcDisplayNameEntries);
+  const displayNameFor = (npcId: string) => npcDisplayNames.get(npcId) ?? npcId;
 
   return (
     <main className="mx-auto max-w-2xl p-8">
@@ -59,7 +72,7 @@ export default async function WorldPage() {
                 >
                   <div className="mb-1 flex items-center justify-between">
                     <span className="font-medium text-neutral-100">
-                      {getNpcDisplayName(r.npc_id)}
+                      {displayNameFor(r.npc_id)}
                     </span>
                     <span className="rounded-full border border-neutral-700 px-2 py-0.5 text-xs text-neutral-400">
                       {r.stage}
@@ -88,7 +101,7 @@ export default async function WorldPage() {
                   <>
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="font-medium text-neutral-200">
-                        {getNpcDisplayName(e.npc_id)}
+                        {displayNameFor(e.npc_id)}
                       </span>
                       <span className="whitespace-nowrap text-xs text-neutral-500">
                         {new Date(e.created_at).toLocaleString("zh-CN")}
@@ -137,7 +150,7 @@ export default async function WorldPage() {
                     {e.life_collection_title}
                   </p>
                   <p className="mt-1 text-xs text-neutral-500">
-                    {getNpcDisplayName(e.npc_id)} ·{" "}
+                    {displayNameFor(e.npc_id)} ·{" "}
                     {new Date(e.created_at).toLocaleDateString("zh-CN")}
                   </p>
                 </li>

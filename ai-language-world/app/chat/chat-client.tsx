@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getNpcDisplayName } from "@/lib/npc/registry";
 import type { EventFeedback } from "@/lib/db/types";
 
 type Message = {
@@ -16,13 +15,19 @@ type Message = {
 
 type Screen =
   | { name: "loading" }
-  | { name: "chatting"; npcId: string; eventId: string }
+  | { name: "chatting"; npcId: string; npcDisplayName: string; eventId: string }
   | {
       name: "closed";
       npcId: string;
+      npcDisplayName: string;
       eventSummary: string;
       lifeCollectionTitle: string | null;
       feedback: EventFeedback | null;
+      // Phase 6.1：只有source==='emergent'（对话中涌现出的新角色）才有值。
+      // decided===false 时说明玩家还没对"留下这个人"做过明确选择，
+      // 这种情况下才展示留下/不留了的按钮。
+      npcSource: "created" | "emergent" | null;
+      npcDecided: boolean | null;
     };
 
 // 401统一处理：session过期/未登录，直接送回首页重新登录
@@ -45,6 +50,8 @@ export default function ChatClient({
   const [sending, setSending] = useState(false);
   const [closing, setClosing] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  // "留下这个人"/"不留了"按钮的loading态，避免重复点击
+  const [decidingNpc, setDecidingNpc] = useState(false);
   // 记录刚被点击复制的词块（用消息索引+词块索引拼key），短暂显示"已复制"再恢复
   const [copiedChunkKey, setCopiedChunkKey] = useState<string | null>(null);
   // 假名标注toggle：开着的时候才去请求/api/furigana，关着完全不发请求
@@ -154,9 +161,12 @@ export default function ChatClient({
           setScreen({
             name: "closed",
             npcId: data.npcId,
+            npcDisplayName: data.npcDisplayName ?? data.npcId,
             eventSummary: data.eventSummary,
             lifeCollectionTitle: data.lifeCollectionTitle ?? null,
             feedback: data.feedback ?? null,
+            npcSource: data.npcSource ?? null,
+            npcDecided: data.npcDecided ?? null,
           });
           return;
         }
@@ -170,6 +180,7 @@ export default function ChatClient({
         setScreen({
           name: "chatting",
           npcId: data.npcId,
+          npcDisplayName: data.npcDisplayName ?? data.npcId,
           eventId: data.eventId,
         });
       } catch {
@@ -228,7 +239,7 @@ export default function ChatClient({
 
   async function handleClose() {
     if (screen.name !== "chatting" || closing) return;
-    const { npcId, eventId } = screen;
+    const { npcId, npcDisplayName } = screen;
 
     setClosing(true);
     setErrorMsg("");
@@ -236,7 +247,7 @@ export default function ChatClient({
       const res = await fetch("/api/event/close", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ eventId }),
+        body: JSON.stringify({ eventId: screen.eventId }),
       });
       if (isUnauthenticated(res)) {
         router.push("/");
@@ -250,14 +261,51 @@ export default function ChatClient({
       setScreen({
         name: "closed",
         npcId,
+        npcDisplayName: data.npcDisplayName ?? npcDisplayName,
         eventSummary: data.eventSummary,
         lifeCollectionTitle: data.lifeCollectionTitle ?? null,
         feedback: data.feedback ?? null,
+        npcSource: data.npcSource ?? null,
+        npcDecided: data.npcDecided ?? null,
       });
     } catch {
       setErrorMsg("网络出了点问题，对话还没结束，可以再试一次。");
     } finally {
       setClosing(false);
+    }
+  }
+
+  // Phase 6.1：涌现出的新角色，聊完之后玩家要么"留下"（进入自己的人物列表，
+  // 以后能在/home浏览场景里选到TA），要么"不留了"（status变成discarded，
+  // 不再出现在任何列表里，但数据不删）。不管选哪个，都要调一次这个接口——
+  // "decided"字段记录的是"玩家有没有做过这个选择"本身。
+  async function handleDecideNpc(status: "active" | "discarded") {
+    if (screen.name !== "closed" || decidingNpc) return;
+    const { npcId } = screen;
+
+    setDecidingNpc(true);
+    setErrorMsg("");
+    try {
+      const res = await fetch("/api/npc/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ npcId, status }),
+      });
+      if (isUnauthenticated(res)) {
+        router.push("/");
+        return;
+      }
+      if (!res.ok) {
+        setErrorMsg("这个选择没保存成功，可以再试一次。");
+        return;
+      }
+      setScreen((prev) =>
+        prev.name === "closed" ? { ...prev, npcDecided: true } : prev
+      );
+    } catch {
+      setErrorMsg("网络出了点问题，这个选择没保存成功。");
+    } finally {
+      setDecidingNpc(false);
     }
   }
 
@@ -289,7 +337,7 @@ export default function ChatClient({
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="mb-3 flex items-center justify-between">
             <p className="text-sm text-neutral-400">
-              正在和 {getNpcDisplayName(screen.npcId)} 聊天
+              正在和 {screen.npcDisplayName} 聊天
             </p>
             <div className="flex items-center gap-2">
               <button
@@ -314,7 +362,7 @@ export default function ChatClient({
 
           {resumed && (
             <p className="mb-3 text-xs text-neutral-500">
-              继续你和 {getNpcDisplayName(screen.npcId)} 之前没聊完的对话
+              继续你和 {screen.npcDisplayName} 之前没聊完的对话
             </p>
           )}
           
@@ -430,10 +478,40 @@ export default function ChatClient({
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
           <div className="rounded-md border border-neutral-800 bg-neutral-900/60 p-4">
             <p className="mb-1 text-xs text-neutral-500">
-              和 {getNpcDisplayName(screen.npcId)} 的这次对话
+              和 {screen.npcDisplayName} 的这次对话
             </p>
             <p className="text-sm text-neutral-200">{screen.eventSummary}</p>
           </div>
+
+          {screen.npcSource === "emergent" && screen.npcDecided === false && (
+            <div className="rounded-md border border-neutral-700 bg-neutral-900/40 p-4">
+              <p className="mb-3 text-sm text-neutral-200">
+                要把 {screen.npcDisplayName} 留下，变成你认识的人吗？
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => handleDecideNpc("active")}
+                  disabled={decidingNpc}
+                  className="rounded-md bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-900 disabled:opacity-50"
+                >
+                  留下这个人
+                </button>
+                <button
+                  onClick={() => handleDecideNpc("discarded")}
+                  disabled={decidingNpc}
+                  className="rounded-md border border-neutral-800 px-4 py-2 text-sm text-neutral-400 hover:text-neutral-100 disabled:opacity-50"
+                >
+                  不留了
+                </button>
+              </div>
+            </div>
+          )}
+
+          {screen.npcSource === "emergent" && screen.npcDecided === true && (
+            <p className="text-xs text-neutral-500">
+              已经记下你的选择了。
+            </p>
+          )}
 
           {screen.feedback && screen.feedback.achievements.length > 0 && (
             <div className="rounded-md border border-emerald-900/40 bg-emerald-950/20 p-4">

@@ -51,6 +51,10 @@ export async function POST(req: NextRequest) {
   try {
     // 归属权校验，同时拿到这场事件是跟哪个NPC聊的
     const event = await getOwnedEvent(eventId, userId);
+    // 提到已经关档分支之前取——不然玩家刷新页面重新打到"已关档"分支时，
+    // npcSource/npcDecided会丢失，"留下/不留了"这个决策入口就消失了，
+    // 而这时decided很可能还是false，恰恰是最需要展示这个入口的时候。
+    const npc = await getNpcConfigForUser(event.npc_id, userId);
 
     // 已经关档过了（summary非空）就不重复生成，直接把已有结果原样返回，
     // 防止玩家重复点击"结束对话"重复消耗AI调用、甚至覆盖掉更早生成的结果
@@ -61,10 +65,11 @@ export async function POST(req: NextRequest) {
         lifeCollectionTitle: event.life_collection_title,
         feedback: event.feedback,
         alreadyClosed: true,
+        npcDisplayName: npc.displayName,
+        npcSource: npc.source ?? null,
+        npcDecided: npc.decided ?? null,
       });
     }
-
-    const npc = await getNpcConfigForUser(event.npc_id, userId);
 
     const [relationship, turns] = await Promise.all([
       getOrCreateRelationship(userId, event.npc_id),
@@ -97,6 +102,9 @@ export async function POST(req: NextRequest) {
         feedback: null,
         alreadyClosed: false,
         summaryDegraded: true,
+        npcDisplayName: npc.displayName,
+        npcSource: npc.source ?? null,
+        npcDecided: npc.decided ?? null,
       });
     }
 
@@ -131,6 +139,13 @@ export async function POST(req: NextRequest) {
       feedback: updatedEvent.feedback,
       relationshipStage: updatedRelationship.stage,
       alreadyClosed: false,
+      // Phase 6.1：npc.source/decided只有动态NPC（玩家自建/涌现）才有值，
+      // 静态内置NPC（mizuki/taisho）两个都是undefined。前端用
+      // npcSource==='emergent' && npcDecided===false 判断要不要弹出
+      // "留下这个人/不留了"的选择——静态NPC和已经decided过的动态NPC都不弹。
+      npcDisplayName: npc.displayName,
+      npcSource: npc.source ?? null,
+      npcDecided: npc.decided ?? null,
     });
   } catch (err) {
     console.error("Close event failed", err);
