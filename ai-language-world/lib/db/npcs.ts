@@ -31,6 +31,9 @@ export async function createNpc(
       correction_style: persona.correctionStyle,
       source,
       status: "active",
+      // 'created'路径玩家已经明确选择创建这个人物，视为已决定；
+      // 'emergent'路径是对话中AI临时生成的，要等玩家聊完选"留下/不留了"才算决定。
+      decided: source === "created",
     })
     .select()
     .single();
@@ -79,7 +82,9 @@ export async function setNpcStatus(
   const supabase = await createClient();
   const { error } = await supabase
     .from("npcs")
-    .update({ status })
+    // 不管选"留下"（active）还是"不留了"（discarded），都代表玩家已经
+    // 做过这个选择——decided置true后，"留下/不留了"的入口就不会再出现。
+    .update({ status, decided: true })
     .eq("id", npcId)
     .eq("owner_id", userId);
 

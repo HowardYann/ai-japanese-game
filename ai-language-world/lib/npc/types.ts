@@ -46,4 +46,10 @@ export interface NpcConfig {
    */
   ownerId?: string;
   source?: "created" | "emergent";
+  /**
+   * Phase 6.1新增：跟source配套，只有动态NPC才有值，静态NPC永远是undefined。
+   * source==='emergent' && decided===false 时，前端在对话结束后展示
+   * "留下这个人/不留了"的选择入口；玩家做出选择后由 setNpcStatus 置为 true。
+   */
+  decided?: boolean;
 }

@@ -50,6 +50,9 @@ export interface NpcRow {
   correction_style: string;
   source: "created" | "emergent";
   status: "active" | "discarded";
+  /** 'created'路径插入时=true；'emergent'路径插入时=false，
+   *  玩家在对话结束后选"留下/不留了"之后由 setNpcStatus 置为 true。 */
+  decided: boolean;
   created_at: string;
 }
 

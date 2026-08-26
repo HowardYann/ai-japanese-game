@@ -37,6 +37,7 @@ function toNpcConfig(row: NpcRow): NpcConfig {
     hidden: {},
     ownerId: row.owner_id,
     source: row.source,
+    decided: row.decided,
   };
 }
 
