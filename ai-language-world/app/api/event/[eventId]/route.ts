@@ -46,6 +46,10 @@ export async function GET(
       lifeCollectionTitle: event.life_collection_title,
       feedback: event.feedback,
       turns: turns.map((t) => ({ role: t.role, content: t.content })),
+      // Phase 7：刷新页面/续聊时，把最近一次算出来的Action Wheel选项带上，
+      // 挂在turns数组最后一条NPC消息下面——事件已经结束、或者这场event
+      // 没启用Task State（task_state为null）时是undefined，前端不渲染。
+      latestActions: event.summary || !event.task_state ? undefined : event.latest_actions ?? undefined,
     });
   } catch {
     return NextResponse.json({ error: "Event not found" }, { status: 400 });

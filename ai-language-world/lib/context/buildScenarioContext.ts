@@ -24,7 +24,7 @@ import type { NpcConfig } from "../npc/types";
 // 用的扁平结构不是同一个类型，两边字段对不上，AI生成的identity/personality/...
 // 全部读成undefined，只有displayName是两种结构共有的字段，表现出来就是
 // "卡片只填了姓名"。这里改成直接复用同一个类型，不再各写各的。
-import type { NewNpcDraft } from "../db/types";
+import type { NewNpcDraft, TaskGraph, TaskStage } from "../db/types";
 
 export interface ScenarioContext {
   systemPrompt: string;
@@ -41,6 +41,9 @@ export interface ScenarioResult {
   suggestedNpcId: string | null;
   needsNewNpc: boolean;
   newNpcDraft: NewNpcDraft | null;
+  /** Phase 7新增：见 lib/db/types.ts 的 TaskGraph 注释。
+   *  AI没按格式给出合法stages时是null——优雅降级，不影响其它字段。 */
+  taskGraph: TaskGraph | null;
 }
 
 /** 白名单：只把NPC的人设摘要喂给场景设计prompt，不带hidden字段 */
@@ -76,6 +79,23 @@ ${npcListText}
 # 你的输出要求（非常重要，严格遵守）
 只输出一个JSON对象，不要有任何前言、解释、Markdown代码块标记（不要\`\`\`）。
 
+除了以上字段，不管是否需要新角色，都必须再给一个 "taskGraph" 字段——这不是要玩家
+照本宣科走完的任务清单，只是"这件事大概率会怎么发生"的一个粗略参考路径，之后对话过程中
+如果玩家的言行带偏了方向，这条路径本身是可以被动态调整、甚至整体替换的，不需要玩家的选择
+去迁就它：
+{
+  "taskGraph": {
+    "mainGoal": "跟goal保持一致的一句话",
+    "stages": [
+      {"id": "stage-1", "label": "具体的一步，例如'找到饭团货架'", "required": true},
+      {"id": "stage-2", "label": "...", "required": true},
+      {"id": "stage-3", "label": "可选的一步，例如'决定要不要购物袋'", "required": false}
+    ]
+  }
+}
+stages给4-7个即可，id用"stage-1"这种简单递增写法，label要具体到能直接当Action Wheel
+按钮的目标描述用，不要写抽象的语言点。
+
 如果选了一个现有NPC，JSON结构是：
 {
   "goal": "这个场景里玩家要完成的核心目标，1句话，具体、可感知是否达成，例如'自然地聊聊最近看的电影，并回答对方的追问'",
@@ -84,7 +104,8 @@ ${npcListText}
   "possibleTasks": ["场景中玩家可能需要完成的具体交流任务，3-5条，每条是一件具体的事，不是抽象的语言点"],
   "suggestedNpcId": "从上面NPC列表里选一个id",
   "needsNewNpc": false,
-  "newNpcDraft": null
+  "newNpcDraft": null,
+  "taskGraph": { ... }
 }
 
 如果现有NPC都不合适，需要生成新角色，JSON结构是：
@@ -103,7 +124,8 @@ ${npcListText}
     "interests": ["2-4个兴趣"],
     "speechStyle": "说话方式/语域，决定敬语程度、口头禅、语速",
     "correctionStyle": "这个角色会用什么生活化的自然方式纠正对方日语（不能是教学腔）"
-  }
+  },
+  "taskGraph": { ... }
 }
 
 newNpcDraft里除了displayName，其余六个字段（identity/personality/background/interests/
@@ -171,6 +193,7 @@ export function parseScenarioResult(
 
   const needsNewNpc = p.needsNewNpc === true;
   const newNpcDraft = needsNewNpc ? parseNewNpcDraft(p.newNpcDraft) : null;
+  const taskGraph = parseTaskGraph(p.taskGraph);
 
   // needsNewNpc=true 但草案解析失败（字段缺失/AI没按格式给）时，
   // 宁可退化成"选一个现有NPC"，也不要让整个场景生成因为这一部分失败而报错——
@@ -184,6 +207,7 @@ export function parseScenarioResult(
       suggestedNpcId: validNpcIds[0] ?? null,
       needsNewNpc: false,
       newNpcDraft: null,
+      taskGraph,
     };
   }
 
@@ -204,7 +228,39 @@ export function parseScenarioResult(
     suggestedNpcId,
     needsNewNpc,
     newNpcDraft,
+    taskGraph,
   };
+}
+
+/** Phase 7新增：taskGraph解析失败（AI没按格式给/字段缺失）时返回null——
+ *  这场event就不启用Task State/Action Wheel，退回纯自由对话，
+ *  不应该因为这一个可选增强字段失败就让整个场景生成报错。 */
+function parseTaskGraph(raw: unknown): TaskGraph | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const g = raw as Record<string, unknown>;
+
+  if (typeof g.mainGoal !== "string" || !g.mainGoal.trim()) return null;
+  if (!Array.isArray(g.stages)) return null;
+
+  const seenIds = new Set<string>();
+  const stages: TaskStage[] = [];
+  for (const rawStage of g.stages) {
+    if (typeof rawStage !== "object" || rawStage === null) continue;
+    const s = rawStage as Record<string, unknown>;
+    if (typeof s.id !== "string" || !s.id.trim()) continue;
+    if (typeof s.label !== "string" || !s.label.trim()) continue;
+    if (seenIds.has(s.id)) continue; // id必须唯一，否则后续按id查找会有歧义
+    seenIds.add(s.id);
+    stages.push({
+      id: s.id.trim(),
+      label: s.label.trim(),
+      required: s.required !== false, // 缺省当作true，宽容处理
+    });
+  }
+
+  if (stages.length === 0) return null;
+
+  return { mainGoal: g.mainGoal.trim(), stages };
 }
 
 // 扁平结构，跟 lib/db/types.ts 的 NewNpcDraft 保持一致——见文件顶部的说明，

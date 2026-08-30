@@ -26,6 +26,10 @@ const RECOMMENDED: { label: string; scenario: EventScenario }[] = [
       suggestedNpcId: "mizuki",
       needsNewNpc: false,
       newNpcDraft: null,
+      // 这两条推荐场景是写死的curated数据，不是走AI场景生成流程，
+      // 暂时不配taskGraph——退回纯自由对话，不影响其它功能。
+      // 以后要给这两条也配上Action Wheel的话，在这里手写taskGraph即可。
+      taskGraph: null,
     },
   },
   {
@@ -43,6 +47,7 @@ const RECOMMENDED: { label: string; scenario: EventScenario }[] = [
       suggestedNpcId: "taisho",
       needsNewNpc: false,
       newNpcDraft: null,
+      taskGraph: null,
     },
   },
 ];

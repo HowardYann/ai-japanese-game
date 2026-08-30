@@ -11,6 +11,10 @@ type Message = {
   // 组句辅助命中时才有：一组可点击复制的词块，渲染在这条NPC消息气泡下方
   wordChunks?: string[];
   suggestClose?: boolean;
+  // Phase 7新增：Action Wheel——这场event启用了Task State时才有值，
+  // 表示"当前可以采取的行动"，跟wordChunks（组句辅助）是两件独立的事，
+  // 可以同时出现在同一条NPC消息下面。
+  actions?: { label: string; phrase: string }[];
 };
 
 type Screen =
@@ -54,6 +58,9 @@ export default function ChatClient({
   const [decidingNpc, setDecidingNpc] = useState(false);
   // 记录刚被点击复制的词块（用消息索引+词块索引拼key），短暂显示"已复制"再恢复
   const [copiedChunkKey, setCopiedChunkKey] = useState<string | null>(null);
+  // Phase 7新增：Action Wheel里刚被点击的那个行动，短暂高亮反馈用；
+  // 跟copiedChunkKey分开一个state，避免两套key格式凑巧撞在一起时互相影响
+  const [usedActionKey, setUsedActionKey] = useState<string | null>(null);
   // 假名标注toggle：开着的时候才去请求/api/furigana，关着完全不发请求
   const [showFurigana, setShowFurigana] = useState(false);
   // 按NPC消息原文缓存转换结果，同样的文本只转一次；toggle关了缓存也保留，
@@ -80,6 +87,22 @@ export default function ChatClient({
     requestAnimationFrame(() => {
       el.focus();
       el.setSelectionRange(pos, pos);
+    });
+  }
+
+  // Phase 7新增：Action Wheel里的行动被点击——跟词块（插入光标处）不一样，
+  // 这里直接把整句建议表达替换进输入框（玩家可以直接发、可以改、也可以
+  // 无视它自己重新打字），然后选中全文方便玩家立刻改写。
+  function handleUseAction(key: string, phrase: string) {
+    if (!phrase) return; // phrase允许是空字符串（纯粹的行动，没有具体建议表达）
+    setInput(phrase);
+    setUsedActionKey(key);
+    setTimeout(() => setUsedActionKey((k) => (k === key ? null : k)), 1200);
+
+    const el = inputRef.current;
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.select();
     });
   }
 
@@ -172,10 +195,22 @@ export default function ChatClient({
         }
 
         setMessages(
-          data.turns.map((t: { role: "user" | "npc"; content: string }) => ({
-            role: t.role,
-            content: t.content,
-          }))
+          (() => {
+            const turnMessages: Message[] = data.turns.map(
+              (t: { role: "user" | "npc"; content: string }) => ({
+                role: t.role,
+                content: t.content,
+              })
+            );
+            // Phase 7：latestActions只对应"最近一条NPC消息"，挂在turns数组
+            // 最后一项上——如果最后一条恰好是NPC消息的话（正常情况下续聊时
+            // 应该总是这样，因为对话总是以NPC回应结束）
+            const lastIdx = turnMessages.length - 1;
+            if (data.latestActions && lastIdx >= 0 && turnMessages[lastIdx].role === "npc") {
+              turnMessages[lastIdx] = { ...turnMessages[lastIdx], actions: data.latestActions };
+            }
+            return turnMessages;
+          })()
         );
         setScreen({
           name: "chatting",
@@ -228,6 +263,7 @@ export default function ChatClient({
           content: data.reply,
           wordChunks: data.wordChunks ?? undefined,
           suggestClose: data.suggestClose,
+          actions: data.actions ?? undefined,
         },
       ]);
     } catch {
@@ -393,6 +429,39 @@ export default function ChatClient({
                       m.content
                     )}
                   </div>
+
+                  {/* Phase 7新增：Action Wheel——只在最新一条NPC消息上展示，
+                      避免玩家对着已经过时的行动选项发呆（对话往前推进后，
+                      旧的行动大概率已经不再适用）。 */}
+                  {m.role === "npc" &&
+                    i === messages.length - 1 &&
+                    m.actions &&
+                    m.actions.length > 0 && (
+                      <div className="mr-auto max-w-[80%] rounded-md border border-neutral-800 bg-neutral-900/40 p-2.5">
+                        <p className="mb-1.5 text-xs text-neutral-500">现在可以做的事</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {m.actions.map((action, ai) => {
+                            const key = `${i}-${ai}`;
+                            const isUsed = usedActionKey === key;
+                            return (
+                              <button
+                                key={ai}
+                                type="button"
+                                onClick={() => handleUseAction(key, action.phrase)}
+                                title={action.phrase || undefined}
+                                className={
+                                  isUsed
+                                    ? "rounded border border-emerald-800 bg-emerald-950/40 px-2.5 py-1.5 text-xs text-emerald-300"
+                                    : "rounded border border-neutral-700 bg-neutral-800 px-2.5 py-1.5 text-xs text-neutral-200 hover:border-neutral-500 hover:bg-neutral-700"
+                                }
+                              >
+                                {isUsed ? "✓ 已填入" : action.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                   {/* 组句辅助命中时才出现：接在NPC消息后面的独立提示区块，词块可点击复制 */}
                   {m.role === "npc" && m.wordChunks && m.wordChunks.length > 0 && (

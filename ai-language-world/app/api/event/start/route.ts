@@ -21,11 +21,12 @@ import { requireUserId } from "../../../../lib/supabase/requireUserId";
 import { getNpcConfigForUser } from "../../../../lib/npc/registryServer";
 import { createNpc } from "../../../../lib/db/npcs";
 import { enforcePersonaSafety, PersonaRejectedError } from "../../../../lib/npc/enforcePersonaSafety";
-import { createEvent, getOpenEventForNpc, appendTurn } from "../../../../lib/db/events";
+import { createEvent, getOpenEventForNpc, appendTurn, updateTaskProgress } from "../../../../lib/db/events";
 import { getOrCreateRelationship } from "../../../../lib/db/npcRelationships";
 import { buildOpeningContext } from "../../../../lib/context/buildContext";
 import { callClaude } from "../../../../lib/claude/client";
 import { extractWordChunks } from "../../../../lib/chat/extractWordChunks";
+import { extractActionsAndState } from "../../../../lib/chat/extractActions";
 import type { EventScenario, NewNpcDraft } from "../../../../lib/db/types";
 import type { NpcPersona } from "../../../../lib/npc/types";
 
@@ -55,6 +56,12 @@ function isValidScenario(s: unknown): s is EventScenario {
 
   if (!baseValid) return false;
 
+  // taskGraph是Phase 7新增的可选增强字段（见lib/db/types.ts注释），
+  // 缺失或者干脆是null都不影响这个scenario本身合不合法——它只是给
+  // Task State/Action Wheel用的参考路径，没有就退回纯自由对话。
+  // 不在这里做深入结构校验，AI幻觉出格式错误的stages不会有安全风险
+  // （只会进prompt文本，不会进查询/权限判断），createEvent里会再兜底处理。
+
   if (obj.needsNewNpc) {
     return obj.suggestedNpcId === null && isValidNewNpcDraft(obj.newNpcDraft);
   }
@@ -79,7 +86,10 @@ export async function POST(req: NextRequest) {
     if (!isValidScenario(scenarioInput)) {
       return NextResponse.json({ error: "Invalid scenario payload" }, { status: 400 });
     }
-    scenario = scenarioInput;
+    // taskGraph是Phase 7新增字段，前端理论上会原样转发/api/scenario/generate
+    // 的返回值，但防御性地兜底成null，避免老前端缓存/未升级客户端漏传这个字段
+    // 时导致下游代码读到undefined而不是明确的null。
+    scenario = { ...scenarioInput, taskGraph: scenarioInput.taskGraph ?? null };
   }
 
   // Phase 6：needsNewNpc时没有现成npcId，先把草案落库（过审核）才能拿到一个
@@ -150,13 +160,30 @@ export async function POST(req: NextRequest) {
     // 事件本身已经创建成功，不能因为开场白生成失败就前功尽弃。
     let openingMessage: string | null = null;
     let openingWordChunks: string[] | undefined;
+    let openingActions: { label: string; phrase: string }[] | undefined;
     try {
-      const { systemPrompt, messages } = buildOpeningContext(npc, relationship, scenario);
+      // event.task_state是createEvent按scenario.taskGraph初始化好的
+      // （没有taskGraph就是null），开场白这一轮只需要ACTIONS，不需要
+      // AI判断STATE更新——玩家还什么都没做，进度不会变。
+      const { systemPrompt, messages } = buildOpeningContext(
+        npc,
+        relationship,
+        scenario,
+        event.task_state
+      );
       const raw = await callClaude(systemPrompt, messages);
       const { reply, wordChunks } = extractWordChunks(raw);
-      await appendTurn(event.id, userId, "npc", reply);
-      openingMessage = reply;
+      const { reply: finalReply, actions } = extractActionsAndState(reply);
+      await appendTurn(event.id, userId, "npc", finalReply);
+      if (event.task_state) {
+        await updateTaskProgress(event.id, userId, {
+          taskState: event.task_state,
+          latestActions: actions,
+        });
+      }
+      openingMessage = finalReply;
       openingWordChunks = wordChunks ?? undefined;
+      openingActions = actions ?? undefined;
     } catch (openingErr) {
       console.error("生成开场白失败，退回玩家先开口", openingErr);
     }
@@ -167,6 +194,7 @@ export async function POST(req: NextRequest) {
       npcDisplayName: npc.displayName,
       openingMessage,
       openingWordChunks,
+      openingActions,
     });
   } catch (err) {
     console.error("Failed to start event", err);

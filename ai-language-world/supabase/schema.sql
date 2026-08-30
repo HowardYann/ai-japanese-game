@@ -49,6 +49,10 @@ create table if not exists public.events (
   npc_id text not null, -- 静态NPC是 "mizuki"/"taisho"，Phase 6起也可能是 npcs.id（动态NPC）
   summary text default null, -- null=对话进行中/未关档，非null=已关档的摘要文本
   life_collection_title text, -- 这次对话是否产出了一条"人生收藏"，没有就是 null
+  -- Phase 7新增：见 lib/db/types.ts 的 TaskState/ActionItem 注释。
+  -- scenario没有taskGraph（或者scenario本身为null）的event，这两列一直是null。
+  task_state jsonb default null,
+  latest_actions jsonb default null,
   created_at timestamptz not null default now()
 );
 
