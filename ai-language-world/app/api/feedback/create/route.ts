@@ -45,9 +45,15 @@ export async function POST(req: NextRequest) {
     error: authError,
     } = await supabase.auth.getUser();
 
-    console.log("requireUserId:", userId);
-    console.log("server client auth user:", dbUser?.id);
-    console.log("auth error:", authError);
+    const { data: dbAuthUid, error: dbAuthUidError } = await supabase.rpc(
+  "debug_auth_uid"
+);
+
+console.log("requireUserId:", userId);
+console.log("server client auth user:", dbUser?.id);
+console.log("RPC auth.uid():", dbAuthUid);
+console.log("RPC error:", dbAuthUidError); 
+
 
   try {
     await insertFeedback({ userId, pagePath: pagePath.trim(), content: content.trim() });
