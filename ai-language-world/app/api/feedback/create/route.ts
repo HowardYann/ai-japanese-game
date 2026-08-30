@@ -8,8 +8,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUserId } from "../../../../lib/supabase/requireUserId";
 import { insertFeedback } from "../../../../lib/db/feedback";
+import { createClient } from "../../../../lib/supabase/server";
 
 const MAX_CONTENT_LENGTH = 2000;
+
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -35,6 +37,17 @@ export async function POST(req: NextRequest) {
   } catch {
     userId = null; // 未登录/被封禁，都当匿名反馈处理
   }
+
+  const supabase = await createClient();
+
+    const {
+    data: { user: dbUser },
+    error: authError,
+    } = await supabase.auth.getUser();
+
+    console.log("requireUserId:", userId);
+    console.log("server client auth user:", dbUser?.id);
+    console.log("auth error:", authError);
 
   try {
     await insertFeedback({ userId, pagePath: pagePath.trim(), content: content.trim() });
