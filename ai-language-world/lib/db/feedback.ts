@@ -5,18 +5,18 @@ export async function insertFeedback(params: {
   userId: string | null;
   pagePath: string;
   content: string;
-}): Promise<FeedbackRow> {
+}): Promise<void> {
   const supabase = await createClient();
-  const { data, error } = await supabase
+
+  const { error } = await supabase
     .from("feedback")
     .insert({
       user_id: params.userId,
       page_path: params.pagePath,
       content: params.content,
-    })
-    .select()
-    .single();
+    });
 
-  if (error) throw error;
-  return data as FeedbackRow;
+  if (error) {
+    throw error;
+  }
 }
