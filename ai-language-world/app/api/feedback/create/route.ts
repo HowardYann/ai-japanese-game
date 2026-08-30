@@ -37,22 +37,7 @@ export async function POST(req: NextRequest) {
   } catch {
     userId = null; // 未登录/被封禁，都当匿名反馈处理
   }
-
-  const supabase = await createClient();
-
-    const {
-    data: { user: dbUser },
-    error: authError,
-    } = await supabase.auth.getUser();
-
-    const { data: dbAuthUid, error: dbAuthUidError } = await supabase.rpc(
-  "debug_auth_uid"
-);
-
-console.log("requireUserId:", userId);
-console.log("server client auth user:", dbUser?.id);
-console.log("RPC auth.uid():", dbAuthUid);
-console.log("RPC error:", dbAuthUidError); 
+ 
 
 
   try {

@@ -4,7 +4,7 @@ import FeedbackWidget from "@/components/FeedbackWidget";
 
 export const metadata: Metadata = {
   title: "AI Language World",
-  description: "可以安全体验另一种人生的世界",
+  description: "进入真实生活场景，在行动与交流中掌握语言",
 };
 
 export default function RootLayout({
