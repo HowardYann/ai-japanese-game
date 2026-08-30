@@ -18,17 +18,20 @@
 // 场景的"可能任务"是给buildContext.ts后续注入对话用的，不是显式教学大纲，
 // 不会被展示成"今天要学的内容"。
 
-import type { NpcConfig, NpcPersona } from "../npc/types";
+import type { NpcConfig } from "../npc/types";
+// 复用 lib/db/types.ts 里的扁平NewNpcDraft——之前这里自己重复定义了一份
+// 嵌套在persona下面的NewNpcDraft，跟前端(home-client.tsx)、event/start实际
+// 用的扁平结构不是同一个类型，两边字段对不上，AI生成的identity/personality/...
+// 全部读成undefined，只有displayName是两种结构共有的字段，表现出来就是
+// "卡片只填了姓名"。这里改成直接复用同一个类型，不再各写各的。
+import type { NewNpcDraft } from "../db/types";
 
 export interface ScenarioContext {
   systemPrompt: string;
   userMessage: string;
 }
 
-export interface NewNpcDraft {
-  displayName: string;
-  persona: NpcPersona;
-}
+export type { NewNpcDraft };
 
 export interface ScenarioResult {
   goal: string;
@@ -94,16 +97,19 @@ ${npcListText}
   "needsNewNpc": true,
   "newNpcDraft": {
     "displayName": "显示名，可带假名标注",
-    "persona": {
-      "identity": "一句话身份",
-      "personality": "性格关键词/描述，具体、有辨识度",
-      "background": "背景故事，具体到能在对话里自然提起细节",
-      "interests": ["2-4个兴趣"],
-      "speechStyle": "说话方式/语域，决定敬语程度、口头禅、语速",
-      "correctionStyle": "这个角色会用什么生活化的自然方式纠正对方日语（不能是教学腔）"
-    }
+    "identity": "一句话身份",
+    "personality": "性格关键词/描述，具体、有辨识度",
+    "background": "背景故事，具体到能在对话里自然提起细节",
+    "interests": ["2-4个兴趣"],
+    "speechStyle": "说话方式/语域，决定敬语程度、口头禅、语速",
+    "correctionStyle": "这个角色会用什么生活化的自然方式纠正对方日语（不能是教学腔）"
   }
 }
+
+newNpcDraft里除了displayName，其余六个字段（identity/personality/background/interests/
+speechStyle/correctionStyle）都必须实际填好、具体到能直接用于角色扮演，不要留空字符串、
+不要写"待定"之类的占位内容——玩家会在确认页看到这些字段并可以编辑，
+但初始就应该是一份可以直接用的完整人设草案，不是只有名字的空壳。
 
 判断标准：
 - goal 必须是"要做成什么事"，不是"要学什么"
@@ -201,34 +207,30 @@ export function parseScenarioResult(
   };
 }
 
+// 扁平结构，跟 lib/db/types.ts 的 NewNpcDraft 保持一致——见文件顶部的说明，
+// 之前这里解析的是嵌套在persona下的结构，跟前端实际读取的字段对不上。
 function parseNewNpcDraft(raw: unknown): NewNpcDraft | null {
   if (typeof raw !== "object" || raw === null) return null;
   const d = raw as Record<string, unknown>;
 
   if (typeof d.displayName !== "string" || !d.displayName.trim()) return null;
 
-  const persona = d.persona;
-  if (typeof persona !== "object" || persona === null) return null;
-  const per = persona as Record<string, unknown>;
-
   const required = ["identity", "personality", "background", "speechStyle", "correctionStyle"] as const;
   for (const key of required) {
-    if (typeof per[key] !== "string" || !(per[key] as string).trim()) return null;
+    if (typeof d[key] !== "string" || !(d[key] as string).trim()) return null;
   }
 
-  const interests = Array.isArray(per.interests)
-    ? per.interests.filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+  const interests = Array.isArray(d.interests)
+    ? d.interests.filter((t): t is string => typeof t === "string" && t.trim().length > 0)
     : [];
 
   return {
     displayName: d.displayName.trim(),
-    persona: {
-      identity: (per.identity as string).trim(),
-      personality: (per.personality as string).trim(),
-      background: (per.background as string).trim(),
-      interests,
-      speechStyle: (per.speechStyle as string).trim(),
-      correctionStyle: (per.correctionStyle as string).trim(),
-    },
+    identity: (d.identity as string).trim(),
+    personality: (d.personality as string).trim(),
+    background: (d.background as string).trim(),
+    interests,
+    speechStyle: (d.speechStyle as string).trim(),
+    correctionStyle: (d.correctionStyle as string).trim(),
   };
 }
