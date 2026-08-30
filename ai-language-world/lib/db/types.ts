@@ -136,3 +136,12 @@ export interface ConversationTurnRow {
   content: string;
   created_at: string;
 }
+
+
+export interface FeedbackRow {
+  id: string;
+  user_id: string | null;
+  page_path: string;
+  content: string;
+  created_at: string;
+}

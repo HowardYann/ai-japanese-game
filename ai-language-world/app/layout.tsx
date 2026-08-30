@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import FeedbackWidget from "@/components/FeedbackWidget";
 
 export const metadata: Metadata = {
   title: "AI Language World",
@@ -19,6 +20,7 @@ export default function RootLayout({
       >
 
         {children}
+        <FeedbackWidget />
       </body>
     </html>
   );
