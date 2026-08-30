@@ -66,6 +66,15 @@ export default function ChatClient({
   // 按NPC消息原文缓存转换结果，同样的文本只转一次；toggle关了缓存也保留，
   // 下次开回来不用重新请求
   const [furiganaCache, setFuriganaCache] = useState<Record<string, string>>({});
+  // Phase 8新增（AI Tutor）：哪条消息的解释面板是打开的，一次只开一个，
+  // 保持界面简洁——点开另一条会自动收起上一条。
+  const [tutorOpenIndex, setTutorOpenIndex] = useState<number | null>(null);
+  // 每条消息各自的追问链条，纯内存态，不落库——关掉面板/离开页面就没了，
+  // 是有意为之（这是"随时可关闭的解释层"，不是正式对话历史）
+  const [tutorThreads, setTutorThreads] = useState<Record<number, { question: string; answer: string }[]>>({});
+  const [tutorInput, setTutorInput] = useState("");
+  const [tutorLoading, setTutorLoading] = useState(false);
+  const [tutorError, setTutorError] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -104,6 +113,55 @@ export default function ChatClient({
       el?.focus();
       el?.select();
     });
+  }
+
+  // Phase 8新增（AI Tutor）：点开/收起某条NPC消息的解释面板。
+  // 切到另一条时清空输入框内容，但保留已经问过的追问链条——
+  // 玩家来回切着看不同句子的解释是正常操作，不该每次都要重新打字。
+  function handleToggleTutor(index: number) {
+    setTutorError("");
+    setTutorOpenIndex((prev) => (prev === index ? null : index));
+    setTutorInput("");
+  }
+
+  async function handleAskTutor(index: number) {
+    if (screen.name !== "chatting" || !tutorInput.trim() || tutorLoading) return;
+    const question = tutorInput.trim();
+    const targetMessage = messages[index]?.content;
+    if (!targetMessage) return;
+
+    setTutorLoading(true);
+    setTutorError("");
+    try {
+      const res = await fetch("/api/tutor/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId: screen.eventId,
+          targetMessage,
+          question,
+          priorQA: tutorThreads[index] ?? [],
+        }),
+      });
+      if (isUnauthenticated(res)) {
+        router.push("/");
+        return;
+      }
+      if (!res.ok) {
+        setTutorError("没问出结果，可以再试一次。");
+        return;
+      }
+      const data = await res.json();
+      setTutorThreads((prev) => ({
+        ...prev,
+        [index]: [...(prev[index] ?? []), { question, answer: data.answer }],
+      }));
+      setTutorInput("");
+    } catch {
+      setTutorError("网络出了点问题，没问出结果。");
+    } finally {
+      setTutorLoading(false);
+    }
   }
 
   // 消息列表变化（新消息 / 发送中占位出现）时自动滚到底部
@@ -429,6 +487,58 @@ export default function ChatClient({
                       m.content
                     )}
                   </div>
+
+                  {/* Phase 8新增（AI Tutor）：每条NPC消息下都有的小入口，
+                      不打断阅读——不点就完全不占视觉重量。 */}
+                  {m.role === "npc" && (
+                    <button
+                      type="button"
+                      onClick={() => handleToggleTutor(i)}
+                      className="mr-auto block text-xs text-neutral-500 hover:text-neutral-300"
+                    >
+                      {tutorOpenIndex === i ? "← 收起" : "💡 问问AI"}
+                    </button>
+                  )}
+
+                  {m.role === "npc" && tutorOpenIndex === i && (
+                    <div className="mr-auto max-w-[80%] space-y-2 rounded-md border border-neutral-800 bg-neutral-900/60 p-2.5">
+                      {(tutorThreads[i] ?? []).map((qa, qi) => (
+                        <div key={qi} className="space-y-1 border-b border-neutral-800 pb-2 last:border-0 last:pb-0">
+                          <p className="text-xs text-neutral-400">问：{qa.question}</p>
+                          <p className="text-sm text-neutral-100">{qa.answer}</p>
+                        </div>
+                      ))}
+                      {tutorLoading && (
+                        <p className="text-xs text-neutral-500">正在想…</p>
+                      )}
+                      {tutorError && (
+                        <p className="text-xs text-red-400">{tutorError}</p>
+                      )}
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          handleAskTutor(i);
+                        }}
+                        className="flex gap-1.5"
+                      >
+                        <input
+                          type="text"
+                          value={tutorInput}
+                          onChange={(e) => setTutorInput(e.target.value)}
+                          placeholder={(tutorThreads[i]?.length ?? 0) === 0 ? "这句话是什么意思？为什么这么说？" : "还想接着问点什么"}
+                          disabled={tutorLoading}
+                          className="flex-1 rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-xs text-neutral-100 placeholder:text-neutral-600 focus:border-neutral-500 focus:outline-none disabled:opacity-50"
+                        />
+                        <button
+                          type="submit"
+                          disabled={tutorLoading || !tutorInput.trim()}
+                          className="rounded-md border border-neutral-700 px-2.5 py-1.5 text-xs text-neutral-200 hover:border-neutral-500 disabled:opacity-40"
+                        >
+                          问
+                        </button>
+                      </form>
+                    </div>
+                  )}
 
                   {/* Phase 7新增：Action Wheel——只在最新一条NPC消息上展示，
                       避免玩家对着已经过时的行动选项发呆（对话往前推进后，
