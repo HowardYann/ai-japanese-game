@@ -38,7 +38,7 @@ export default function LoginPage() {
         <div className="space-y-2 text-center">
           <h1 className="text-2xl font-semibold">AI Language World</h1>
           <p className="text-sm text-neutral-400">
-            一个可以安全体验另一种人生的世界
+            进入真实生活场景，在行动与交流中掌握语言
           </p>
         </div>
 
